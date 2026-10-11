@@ -43,6 +43,9 @@ Enligt OSM innehåller rutan 917 ha åker (55 %), 109 ha skog och 429 byggnader.
 
 Mer om varje fas finns i [docs/arbetsgang.md](docs/arbetsgang.md) och
 datakällorna beskrivs i [docs/datakallor.md](docs/datakallor.md).
+[docs/installation.md](docs/installation.md) beskriver hur arbetet delas
+mellan Debian-servern (skript och data) och Windows-datorn (FS25 och GIANTS
+Editor).
 
 ## Kom igång med skripten
 
