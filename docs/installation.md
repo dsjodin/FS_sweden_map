@@ -4,7 +4,7 @@ Arbetet delas mellan två datorer:
 
 | Dator | Används till |
 |---|---|
-| **Debian-servern** (utan skrivbord) | Hämta och bearbeta data med skripten i repot. Eventuellt köra Maps4FS i Docker. |
+| **Debian-servern** (utan skrivbord) | Hämta och bearbeta data med skripten i repot. |
 | **Windows-datorn** | FS25, GIANTS Editor 10, GIMP och QGIS. Allt som har grafiskt gränssnitt. |
 
 Resultatet från servern (höjdkarta, masker och fält) hämtas över till
@@ -47,13 +47,10 @@ read -rs LM_PASSWORD && export LM_PASSWORD
 python scripts/fetch_heightmap.py
 ```
 
-### 4. Maps4FS (valfritt, testas i fas 3)
+### 4. Kartgeneratorer
 
-Maps4FS genererar en FS25-grundkarta och har ett webbgränssnitt. Det går att
-köra i Docker på servern och öppna i webbläsaren på Windows-datorn via
-`http://<serverns-ip>:<port>`. Installera Docker enligt docs.docker.com
-(Debian) och följ Maps4FS egna instruktioner för det aktuella Docker-kommandot
-och portnumret, eftersom de ändras mellan versioner.
+Maps4FS har lagts ner och ersatts av webbtjänsten MapToPlay (maptoplay.com),
+som inte behöver installeras. Inget mer behövs på servern för den.
 
 ## Windows-datorn
 

@@ -41,8 +41,8 @@ Enligt OSM innehåller rutan 917 ha åker (55 %), 109 ha skog och 429 byggnader.
 |---|---|---|
 | 1 | Välj område och storlek | `tools/omradesval.html`, `config/area.json` |
 | 2 | Hämta data: höjdmodell, ortofoto och fastighetskarta från Lantmäteriet, jordbruksblock från Jordbruksverket, OSM | skript i `scripts/` |
-| 3 | Gör om datan till FS25-format: höjdkarta, fältmasker, väg- och skogsmasker | skript i `scripts/`, eller Maps4FS med egen höjdmodell |
-| 4 | Generera grundkarta och öppna den i GIANTS Editor 10 | Maps4FS och GIANTS Editor (Windows/Mac) |
+| 3 | Gör om datan till FS25-format: höjdkarta, fältmasker, väg- och skogsmasker | skript i `scripts/` |
+| 4 | Generera grundkarta och öppna den i GIANTS Editor 10 | Kartmall (MapToPlay eller egen) och GIANTS Editor på Windows |
 | 5 | Bygg ut: terrängtexturer, fält, vägar, gårdar, skog, vatten, svenska detaljer | GIANTS Editor |
 | 6 | Gör kartan spelbar: gårdar att köpa, spannmålsmottagning, försäljningsställen, PDA-karta, trafik | GIANTS Editor och XML |
 | 7 | Testa i spelet, paketera som mod | FS25 |

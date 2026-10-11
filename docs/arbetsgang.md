@@ -9,7 +9,7 @@ avslutas med något konkret som går att titta på innan nästa fas börjar.
 |---|---|---|
 | Farming Simulator 25 | Testa kartan | Har du redan |
 | GIANTS Editor 10 | Huvudverktyget för att bygga kartan | Gratis via GIANTS Developer Network (gdn.giants-software.com), kräver konto |
-| Maps4FS | Genererar en grundkarta (terräng, fält, vägar, skog) från geodata | Gratis, öppen källkod |
+| MapToPlay (valfritt) | Webbtjänst som genererar en FS25-grundkarta från geodata. Efterträdare till Maps4FS, som har lagts ner | Gratisnivå finns, betalnivåer från 20 €/mån |
 | QGIS | Titta på och klippa geodata | Gratis |
 | GIMP eller Paint.NET | Redigera masker och texturer | Gratis |
 | Python 3.11 eller senare | Skripten i det här repot | Gratis |
@@ -54,16 +54,15 @@ Skript som ska skrivas i den här fasen:
 - `make_fields.py`: fältgränser från jordbruksblocken, förenklade så att de
   går att köra på i spelet.
 
-Alternativet är att låta Maps4FS göra en stor del av detta och bara ge den vår
-egen höjdmodell. Vi provar Maps4FS först och skriver egna skript där resultatet
-inte räcker.
+Höjdkartan är klar (`make_heightmap.py`). Maskerna och fälten görs med egna
+skript från Jordbruksverkets skiften, Lantmäteriets data och OSM.
 
 **Klart när:** höjdkarta och masker ser rätt ut jämfört med ortofotot.
 
 ## Fas 4: Grundkarta i GIANTS Editor
 
-- Generera kartan med Maps4FS (eller kopiera in egna höjdkartor och masker i en
-  tom FS25-kartmall).
+- Skaffa en FS25-kartmall: generera en med MapToPlay, eller utgå från en tom
+  mall. Byt sedan ut mallens `data/dem.png` mot vår och lägg in våra masker.
 - Öppna `map.i3d` i GIANTS Editor och kontrollera terrängen.
 - Starta kartan i spelet tidigt, redan innan den är snygg. Då märks fel i
   grundinställningarna innan mycket arbete lagts på dem.
