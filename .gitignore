@@ -6,3 +6,6 @@ data/jbv/
 *.laz
 __pycache__/
 .venv/
+
+# Genererade kartfiler (stora, skapas med skripten)
+build/

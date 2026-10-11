@@ -25,9 +25,15 @@ Enligt OSM innehåller rutan 917 ha åker (55 %), 109 ha skog och 429 byggnader.
 - [x] Jordbruksverkets block och skiften 2025, med grödor
   (`scripts/fetch_fields.py`): 279 block och 371 skiften i rutan med 300 m
   marginal. Ingen inloggning behövs.
-- [ ] Lantmäteriets höjdmodell, 1 m (`scripts/fetch_heightmap.py`). Kräver ett
-  Geotorget-konto, se [docs/datakallor.md](docs/datakallor.md).
+- [x] Lantmäteriets höjdmodell, 1 m (`scripts/fetch_heightmap.py`). Höjden
+  varierar mellan 37,6 och 93,5 m över havet, en skillnad på 56 m.
 - [ ] Ortofoto som förlaga.
+
+**Fas 3 har börjat.**
+
+- [ ] Höjdkarta `build/data/dem.png`, 4097×4097, 16 bitar
+  (`scripts/make_heightmap.py`). Värdena till GIANTS Editor skrivs till
+  `build/heightmap.json`.
 
 ## Arbetsgång
 
@@ -56,6 +62,7 @@ pip install -r requirements.txt
 python scripts/fetch_osm.py           # hämtar OSM-data till data/raw/
 python scripts/fetch_fields.py        # Jordbruksverkets block och skiften
 python scripts/fetch_heightmap.py     # Lantmäteriets höjdmodell (kräver LM_USER/LM_PASSWORD)
+python scripts/make_heightmap.py      # höjdkarta i FS25-format till build/
 python scripts/analyze_area.py        # statistik per kartstorlek + data till väljaren
 python scripts/build_area_picker.py   # bygger tools/omradesval.html
 ```
@@ -69,6 +76,7 @@ config/area.json        område: mittpunkt, storlek, platser
 scripts/                hämtning och bearbetning av data
 tools/                  områdesväljaren (HTML)
 data/                   genererad data (rådata under data/raw/ checkas inte in)
+build/                  färdiga kartfiler, t.ex. dem.png (checkas inte in)
 docs/                   arbetsgång och datakällor
 ```
 
