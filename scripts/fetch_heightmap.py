@@ -112,7 +112,8 @@ def main():
     path = ROOT / args.out
     path.parent.mkdir(parents=True, exist_ok=True)
     with rasterio.open(path, "w", driver="GTiff", width=width, height=height, count=1, dtype="float32",
-                       crs="EPSG:3006", transform=transform, nodata=NODATA, compress="deflate") as dst:
+                       crs="EPSG:3006", transform=transform, nodata=NODATA, compress="deflate",
+                       predictor=3, tiled=True, blockxsize=512, blockysize=512) as dst:
         dst.write(out, 1)
 
     valid = out[out != NODATA]
