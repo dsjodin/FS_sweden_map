@@ -11,9 +11,14 @@ Ett konto behövs, och det är gratis för öppna data.
 ### Höjdmodellen, steg för steg
 
 1. Skapa ett konto på geotorget.lantmateriet.se.
-2. Leta upp produkten **Markhöjdmodell Nedladdning, grid 1+** och godkänn
-   villkoren eller beställ åtkomst. Den är öppna data (CC BY 4.0).
-3. Kör skriptet med kontouppgifterna:
+2. Gå till produkten **Markhöjdmodell Nedladdning, API**
+   (geotorget.lantmateriet.se/geodataprodukter/markhojdmodell-nedladdning-api)
+   och beställ behörighet. Det är gratis, och datan är öppna data (CC BY 4.0).
+   Vänta tills beställningen är godkänd.
+3. Kör skriptet med samma användarnamn och lösenord som du loggar in på
+   Geotorget med. Det gäller privatpersoner. En organisation använder i
+   stället systemkontot som behörigheten är kopplad till. Tjänsten använder
+   HTTP Basic-inloggning, och skriptet sköter det.
 
    ```powershell
    $env:LM_USER="ditt-användarnamn"; $env:LM_PASSWORD="ditt-lösenord"
