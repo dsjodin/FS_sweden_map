@@ -14,8 +14,12 @@ Bara den del av varje 10×10 km-ruta som behövs läses (filerna är
 molnoptimerade), så nedladdningen blir liten.
 
 Användning:
-    python scripts/fetch_heightmap.py
+    python scripts/fetch_heightmap.py [--margin 64] [--out data/lm/hojd/dtm_area.tif]
+
+Med större --margin går det att hämta även omgivningen, till exempel till
+en kartgenerator som vill ha bakgrundsterräng runt den spelbara ytan.
 """
+import argparse
 import json
 import os
 import sys
@@ -32,7 +36,7 @@ from area import ROOT, map_bbox
 
 STAC_SEARCH = "https://api.lantmateriet.se/stac-hojd/v1/search"
 COLLECTION = "dtm-cog"
-MARGIN = 64  # meter utanför kartrutan, ger utrymme för kantutjämning
+MARGIN = 64  # meter utanför kartrutan som standard, ger utrymme för kantutjämning
 NODATA = -9999.0
 
 to_wgs = Transformer.from_crs("EPSG:3006", "EPSG:4326", always_xy=True).transform
@@ -53,13 +57,18 @@ def find_tiles(bbox):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--margin", type=float, default=MARGIN, help="meter utanför kartrutan")
+    parser.add_argument("--out", default="data/lm/hojd/dtm_area.tif", help="utfil relativt repots rot")
+    args = parser.parse_args()
+
     user, password = os.environ.get("LM_USER"), os.environ.get("LM_PASSWORD")
     if not user or not password:
         print("Ange Geotorget-kontot i miljövariablerna LM_USER och LM_PASSWORD (se skriptets hjälptext).",
               file=sys.stderr)
         return 1
 
-    bbox = map_bbox(MARGIN)
+    bbox = map_bbox(args.margin)
     # Avrunda till hela meter så att pixlarna linjerar med Lantmäteriets grid.
     min_e, min_n = np.floor(bbox[0]), np.floor(bbox[1])
     max_e, max_n = np.ceil(bbox[2]), np.ceil(bbox[3])
@@ -100,7 +109,7 @@ def main():
     if missing:
         print(f"Varning: {missing} pixlar saknar höjd.", file=sys.stderr)
 
-    path = ROOT / "data" / "lm" / "hojd" / "dtm_area.tif"
+    path = ROOT / args.out
     path.parent.mkdir(parents=True, exist_ok=True)
     with rasterio.open(path, "w", driver="GTiff", width=width, height=height, count=1, dtype="float32",
                        crs="EPSG:3006", transform=transform, nodata=NODATA, compress="deflate") as dst:
