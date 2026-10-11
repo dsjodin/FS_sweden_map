@@ -1,0 +1,404 @@
+<title>Tysslinge kartområde</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/*__LEAFLET_CSS__*/</style>
+<style>
+/* Layout: kartan tar ytan, en smal panel bredvid med siffror för rutan. Färger lånade från terrängkartans konventioner (gul åker, grön skog, röda vägar). */
+:root {
+  --bg: #f4f3ec; --panel: #fffffb; --fg: #23261f; --muted: #666b5c; --line: #dddccd;
+  --accent: #1e5b8c; --accent-fg: #ffffff; --ok: #2f7d3a; --warn: #a8551b;
+  --map-bg: #f1efe2; --c-field: #f2d872; --c-meadow: #d9e3a0; --c-forest: #a5cc90;
+  --c-water: #8cbfe2; --c-wetland: #bdd5c4; --c-yard: #e6c79f; --c-built: #e2d6cc;
+  --c-building: #5e4f47; --c-road-1: #c8352b; --c-road-2: #e0692a; --c-road-3: #6c5d50;
+  --c-track: #8a7a6b; --c-rail: #3b3b3b; --c-stream: #4f95c8; --c-square: #1e5b8c;
+  --c-mask: rgba(35, 38, 31, 0.38);
+  --f-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151813; --panel: #1d211b; --fg: #e7e9de; --muted: #a0a594; --line: #333a2f;
+    --accent: #7db1e0; --accent-fg: #0f1a24; --ok: #7cc787; --warn: #e59a5e;
+    --map-bg: #1b1f19; --c-field: #857536; --c-meadow: #58663a; --c-forest: #2e4a2b;
+    --c-water: #2b5676; --c-wetland: #33473c; --c-yard: #5b4a36; --c-built: #393532;
+    --c-building: #cbbfb3; --c-road-1: #e8604f; --c-road-2: #e48b4b; --c-road-3: #aaa195;
+    --c-track: #8d8579; --c-rail: #c9c9c9; --c-stream: #5aa3d8; --c-square: #8cc0ee;
+    --c-mask: rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151813; --panel: #1d211b; --fg: #e7e9de; --muted: #a0a594; --line: #333a2f;
+  --accent: #7db1e0; --accent-fg: #0f1a24; --ok: #7cc787; --warn: #e59a5e;
+  --map-bg: #1b1f19; --c-field: #857536; --c-meadow: #58663a; --c-forest: #2e4a2b;
+  --c-water: #2b5676; --c-wetland: #33473c; --c-yard: #5b4a36; --c-built: #393532;
+  --c-building: #cbbfb3; --c-road-1: #e8604f; --c-road-2: #e48b4b; --c-road-3: #aaa195;
+  --c-track: #8d8579; --c-rail: #c9c9c9; --c-stream: #5aa3d8; --c-square: #8cc0ee;
+  --c-mask: rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.45;
+  padding-inline: 16px; padding-block: 16px; box-sizing: border-box;
+}
+*, *::before, *::after { box-sizing: border-box; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; height: 100%; }
+#map { border-radius: 10px; border: 1px solid var(--line); background: var(--map-bg); min-height: 420px; }
+.leaflet-container { background: var(--map-bg); font-family: var(--f-body); }
+.panel { overflow-y: auto; display: flex; flex-direction: column; gap: 18px; min-width: 0; padding-right: 2px; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: 30px; line-height: 1.05; margin: 0; letter-spacing: 0.01em; text-wrap: balance; }
+.lede { color: var(--muted); margin: 6px 0 0; font-size: 14px; }
+.eyebrow { font-family: var(--f-display); font-weight: 600; font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.sizes button {
+  font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  border-radius: 8px; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.sizes button b { font-family: var(--f-display); font-size: 20px; font-weight: 700; }
+.sizes button span { font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.sizes button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.sizes button[aria-pressed="true"] span { color: var(--accent-fg); opacity: 0.85; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.size-note { font-size: 13.5px; color: var(--muted); margin: 8px 0 0; }
+.figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+.fig .v { font-family: var(--f-display); font-size: 26px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.fig .v small { font-size: 15px; color: var(--muted); font-weight: 500; margin-left: 3px; }
+.fig .l { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.cover { display: flex; height: 14px; border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
+.cover i { display: block; height: 100%; }
+.legend { list-style: none; padding: 0; margin: 10px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; font-size: 13px; }
+.legend li { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; border: 1px solid var(--line); }
+.legend .n { margin-left: auto; font-family: var(--f-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+td { padding: 4px 0; border-bottom: 1px solid var(--line); }
+td.n { text-align: right; font-family: var(--f-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.road-key { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 8px; }
+.pois { display: flex; flex-direction: column; gap: 6px; }
+.poi { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.chip { font-family: var(--f-display); font-size: 12.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 8px; border-radius: 99px; border: 1px solid currentColor; }
+.chip.in { color: var(--ok); }
+.chip.out { color: var(--warn); }
+.places { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13.5px; color: var(--fg); }
+.places span { white-space: nowrap; }
+.coords { font-family: var(--f-mono); font-size: 12.5px; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
+.coords dt { color: var(--muted); }
+.coords dd { margin: 0; font-variant-numeric: tabular-nums; }
+.copy { margin-top: 10px; font: inherit; font-size: 14px; cursor: pointer; border-radius: 8px; padding: 7px 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+.src { font-size: 12px; color: var(--muted); margin: 0; }
+.place-label {
+  font-family: var(--f-display); font-weight: 600; font-size: 13px; color: var(--fg); white-space: nowrap;
+  text-shadow: 0 0 3px var(--map-bg), 0 0 3px var(--map-bg), 0 0 2px var(--map-bg);
+  transform: translate(-50%, -50%); pointer-events: none;
+}
+.place-label.small { font-weight: 500; font-size: 11.5px; color: var(--muted); }
+.place-label.poi { font-size: 14.5px; font-weight: 700; color: var(--accent); }
+.leaflet-control-attribution { background: var(--panel) !important; color: var(--muted) !important; font-size: 11px; }
+.leaflet-control-attribution a { color: var(--accent) !important; }
+.leaflet-bar a { background: var(--panel); color: var(--fg); border-bottom-color: var(--line); }
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  #map { height: 62vh; }
+  .panel { overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <div id="map" role="application" aria-label="Karta över Tysslinge med kartruta"></div>
+  <aside class="panel">
+    <header>
+      <h1>Tysslinge kartområde</h1>
+      <p class="lede">Dra den blå rutan eller klicka på kartan för att flytta den. Siffrorna gäller det som ryms inom rutan.</p>
+    </header>
+
+    <section>
+      <p class="eyebrow">Kartstorlek i FS25</p>
+      <div class="sizes" role="group" aria-label="Kartstorlek">
+        <button id="size-2048" data-size="2048" aria-pressed="false"><b>2×2 km</b><span>2048 m · standard</span></button>
+        <button id="size-4096" data-size="4096" aria-pressed="true"><b>4×4 km</b><span>4096 m · 4x</span></button>
+        <button id="size-8192" data-size="8192" aria-pressed="false"><b>8×8 km</b><span>8192 m · 16x</span></button>
+      </div>
+      <p class="size-note" id="size-note"></p>
+    </section>
+
+    <section>
+      <p class="eyebrow">Inom rutan</p>
+      <div class="figures">
+        <div class="fig"><div class="v" id="f-field"></div><div class="l">åkermark</div></div>
+        <div class="fig"><div class="v" id="f-blocks"></div><div class="l">åkerskiften i OSM (över 0,5 ha)</div></div>
+        <div class="fig"><div class="v" id="f-yards"></div><div class="l">gårdsplaner</div></div>
+        <div class="fig"><div class="v" id="f-buildings"></div><div class="l">byggnader</div></div>
+      </div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Markanvändning</p>
+      <div class="cover" id="cover" aria-hidden="true"></div>
+      <ul class="legend" id="legend"></ul>
+    </section>
+
+    <section>
+      <p class="eyebrow">Vägar</p>
+      <table><tbody id="roads"></tbody></table>
+    </section>
+
+    <section>
+      <p class="eyebrow">Platser du nämnde</p>
+      <div class="pois" id="pois"></div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Gårdar och byar i rutan</p>
+      <div class="places" id="places"></div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Mittpunkt</p>
+      <dl class="coords">
+        <dt>WGS84</dt><dd id="c-wgs"></dd>
+        <dt>SWEREF 99 TM</dt><dd id="c-sweref"></dd>
+      </dl>
+      <button class="copy" id="copy">Kopiera mittpunkt och storlek</button>
+    </section>
+
+    <p class="src">Data: © OpenStreetMap-bidragsgivare (ODbL), hämtad <span id="osm-date"></span>. Åkerskiften i OSM är ofta hela åkerblock som rymmer flera skiften, så det verkliga antalet fält är högre.</p>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<script>const DATA = /*__DATA__*/null;</script>
+<script>
+(function () {
+  proj4.defs("EPSG:3006", "+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+  const toSweref = (lon, lat) => proj4("EPSG:4326", "EPSG:3006", [lon, lat]);
+  const toWgs = (e, n) => proj4("EPSG:3006", "EPSG:4326", [e, n]);
+
+  const SIZE_NOTES = {
+    2048: "Standardstorlek. Snabbast att bygga och lättast för datorn, men rymmer inte både Tysslinge och Södra Valla.",
+    4096: "Fyra gånger standardytan. Rimligt för ett första eget projekt som ska likna verkligheten, men kräver mer arbete med fält och objekt.",
+    8192: "Sexton gånger standardytan. Mycket stort projekt med motorväg och tätorter i kanten. Kräver kraftig dator och många månaders arbete.",
+  };
+
+  const COVER = [
+    ["farmland", "Åker", "--c-field"],
+    ["meadow", "Äng och bete", "--c-meadow"],
+    ["forest", "Skog", "--c-forest"],
+    ["water", "Vatten", "--c-water"],
+    ["wetland", "Våtmark", "--c-wetland"],
+    ["farmyard", "Gårdsplan", "--c-yard"],
+    ["residential", "Bebyggelse", "--c-built"],
+  ];
+  const ROADS = [
+    ["motorväg/riksväg", "Motorväg och riksväg", "--c-road-1"],
+    ["länsväg", "Länsväg", "--c-road-2"],
+    ["småväg", "Mindre väg", "--c-road-3"],
+    ["grusväg/brukningsväg", "Grus- och brukningsväg", "--c-track"],
+    ["gårdsväg/infart", "Gårdsväg och infart", "--c-track"],
+  ];
+
+  const cfg = DATA.config;
+  const state = { lat: cfg.center.lat, lon: cfg.center.lon, size: cfg.size_m };
+  try {
+    const saved = JSON.parse(localStorage.getItem("tysslinge-area") || "null");
+    if (saved && saved.lat && saved.lon && saved.size) Object.assign(state, saved);
+  } catch (e) { /* lagring saknas, använd standard */ }
+
+  const css = () => getComputedStyle(document.documentElement);
+  const tok = (name) => css().getPropertyValue(name).trim();
+
+  // Förbered objekt: bbox, yta och mittpunkt räknas en gång.
+  const areas = [], roads = [], buildings = [], places = [], lines = [];
+  for (const f of DATA.features.features) {
+    const k = f.properties.k;
+    if (k === "place") { places.push(f); continue; }
+    f.bbox = turf.bbox(f);
+    if (k === "building") {
+      f.c = [(f.bbox[0] + f.bbox[2]) / 2, (f.bbox[1] + f.bbox[3]) / 2];
+      buildings.push(f);
+    } else if (k === "road") roads.push(f);
+    else if (k === "waterway" || k === "rail") lines.push(f);
+    else { f.area = turf.area(f); areas.push(f); }
+  }
+
+  const map = L.map("map", { preferCanvas: true, zoomSnap: 0.25, attributionControl: true, center: [cfg.center.lat, cfg.center.lon], zoom: 13 });
+  map.attributionControl.setPrefix(false).addAttribution("© OpenStreetMap-bidragsgivare");
+
+  function areaStyle(f) {
+    const k = f.properties.k;
+    const varName = { farmland: "--c-field", meadow: "--c-meadow", forest: "--c-forest", water: "--c-water", wetland: "--c-wetland", farmyard: "--c-yard", residential: "--c-built" }[k];
+    return { stroke: k === "farmland", color: tok("--c-field"), weight: 0.6, opacity: 0.9, fillColor: tok(varName), fillOpacity: 1 };
+  }
+  const order = { forest: 0, meadow: 1, residential: 2, farmland: 3, wetland: 4, farmyard: 5, water: 6 };
+  areas.sort((a, b) => order[a.properties.k] - order[b.properties.k]);
+
+  function roadStyle(f) {
+    const c = f.properties.c;
+    if (f.properties.k === "waterway") return { color: tok("--c-stream"), weight: f.properties.c === "river" ? 2.5 : 1.2, opacity: 0.9 };
+    if (f.properties.k === "rail") return { color: tok("--c-rail"), weight: 1.5, dashArray: "6 4" };
+    const s = {
+      "motorväg/riksväg": { color: tok("--c-road-1"), weight: 3.2 },
+      "länsväg": { color: tok("--c-road-2"), weight: 2.4 },
+      "småväg": { color: tok("--c-road-3"), weight: 1.5 },
+      "grusväg/brukningsväg": { color: tok("--c-track"), weight: 1.1, dashArray: "4 3" },
+      "gårdsväg/infart": { color: tok("--c-track"), weight: 0.8 },
+    }[c];
+    return Object.assign({ opacity: 0.95 }, s);
+  }
+
+  const areaLayer = L.geoJSON({ type: "FeatureCollection", features: areas }, { style: areaStyle, interactive: false }).addTo(map);
+  const lineLayer = L.geoJSON({ type: "FeatureCollection", features: lines.concat(roads) }, { style: roadStyle, interactive: false }).addTo(map);
+  const bldLayer = L.geoJSON({ type: "FeatureCollection", features: buildings }, {
+    style: () => ({ stroke: false, fillColor: tok("--c-building"), fillOpacity: 0.9 }), interactive: false,
+  }).addTo(map);
+
+  // Ortnamn: byar alltid, gårdar när man zoomat in.
+  const poiNames = new Set(Object.keys(cfg.points_of_interest));
+  const labelBig = L.layerGroup().addTo(map), labelSmall = L.layerGroup();
+  for (const p of places) {
+    const name = p.properties.name, kind = p.properties.c;
+    const big = kind === "village" || kind === "hamlet";
+    const cls = poiNames.has(name) ? "place-label poi" : big ? "place-label" : "place-label small";
+    const m = L.marker([p.geometry.coordinates[1], p.geometry.coordinates[0]], {
+      icon: L.divIcon({ className: "", html: `<div class="${cls}">${name}</div>`, iconSize: [0, 0] }),
+      interactive: false, keyboard: false,
+    });
+    (big || poiNames.has(name) ? labelBig : labelSmall).addLayer(m);
+  }
+  map.on("zoomend", () => {
+    if (map.getZoom() >= 14) labelSmall.addTo(map); else labelSmall.remove();
+  });
+
+  // Kartrutan och mörkläggning utanför.
+  const c0 = [[cfg.center.lat, cfg.center.lon], [cfg.center.lat + 0.01, cfg.center.lon], [cfg.center.lat, cfg.center.lon + 0.01]];
+  const square = L.polygon(c0, { color: tok("--c-square"), weight: 2.5, fill: true, fillOpacity: 0, interactive: true, bubblingMouseEvents: false }).addTo(map);
+  const mask = L.polygon(c0, { stroke: false, fillColor: tok("--c-mask"), fillOpacity: 1, interactive: false }).addTo(map);
+
+  function corners() {
+    const [e, n] = toSweref(state.lon, state.lat), h = state.size / 2;
+    return [[e - h, n - h], [e + h, n - h], [e + h, n + h], [e - h, n + h]].map(([x, y]) => toWgs(x, y));
+  }
+
+  function drawSquare() {
+    const c = corners().map(([lon, lat]) => [lat, lon]);
+    square.setLatLngs(c);
+    mask.setLatLngs([[[85, -180], [85, 180], [-85, 180], [-85, -180]], c]);
+  }
+
+  const fmt = (n, d = 0) => n.toLocaleString("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  function computeStats() {
+    const c = corners();
+    const bb = [Math.min(...c.map((p) => p[0])), Math.min(...c.map((p) => p[1])), Math.max(...c.map((p) => p[0])), Math.max(...c.map((p) => p[1]))];
+    const hit = (b) => !(b[2] < bb[0] || b[0] > bb[2] || b[3] < bb[1] || b[1] > bb[3]);
+    const inside = (b) => b[0] >= bb[0] && b[2] <= bb[2] && b[1] >= bb[1] && b[3] <= bb[3];
+    const cover = {}, roadKm = {};
+    let blocks = 0, yards = 0;
+    for (const f of areas) {
+      if (!hit(f.bbox)) continue;
+      const a = inside(f.bbox) ? f.area : turf.area(turf.bboxClip(f, bb));
+      if (a <= 0) continue;
+      cover[f.properties.k] = (cover[f.properties.k] || 0) + a;
+      if (f.properties.k === "farmland" && a > 5000) blocks++;
+      if (f.properties.k === "farmyard") yards++;
+    }
+    for (const f of roads) {
+      if (!hit(f.bbox)) continue;
+      const g = inside(f.bbox) ? f : turf.bboxClip(f, bb);
+      roadKm[f.properties.c] = (roadKm[f.properties.c] || 0) + turf.length(g);
+    }
+    const nBld = buildings.filter((f) => f.c[0] >= bb[0] && f.c[0] <= bb[2] && f.c[1] >= bb[1] && f.c[1] <= bb[3]).length;
+    const inBox = (lon, lat) => lon >= bb[0] && lon <= bb[2] && lat >= bb[1] && lat <= bb[3];
+    const names = [...new Set(places.filter((p) => p.properties.c !== "locality" && inBox(...p.geometry.coordinates)).map((p) => p.properties.name))].sort((a, b) => a.localeCompare(b, "sv"));
+    return { cover, roadKm, blocks, yards, nBld, names, inBox };
+  }
+
+  function render() {
+    drawSquare();
+    const s = computeStats();
+    const totalHa = (state.size * state.size) / 10000;
+    const ha = (k) => (s.cover[k] || 0) / 10000;
+    document.getElementById("f-field").innerHTML = `${fmt(ha("farmland"))}<small>ha · ${fmt((100 * ha("farmland")) / totalHa)} %</small>`;
+    document.getElementById("f-blocks").textContent = fmt(s.blocks);
+    document.getElementById("f-yards").textContent = fmt(s.yards);
+    document.getElementById("f-buildings").textContent = fmt(s.nBld);
+
+    let used = 0;
+    const segs = COVER.map(([k, , v]) => { const p = (100 * ha(k)) / totalHa; used += p; return `<i style="width:${p}%;background:var(${v})"></i>`; });
+    document.getElementById("cover").innerHTML = segs.join("") + `<i style="width:${Math.max(0, 100 - used)}%;background:var(--map-bg)"></i>`;
+    document.getElementById("legend").innerHTML = COVER.map(([k, label, v]) =>
+      `<li><span class="sw" style="background:var(${v})"></span>${label}<span class="n">${fmt(ha(k))} ha</span></li>`).join("") +
+      `<li><span class="sw" style="background:var(--map-bg)"></span>Övrigt<span class="n">${fmt(Math.max(0, totalHa - COVER.reduce((t, [k]) => t + ha(k), 0)))} ha</span></li>`;
+
+    document.getElementById("roads").innerHTML = ROADS.map(([k, label, v]) =>
+      `<tr><td><span class="road-key" style="border-color:var(${v})"></span>${label}</td><td class="n">${fmt(s.roadKm[k] || 0, 1)} km</td></tr>`).join("");
+
+    document.getElementById("pois").innerHTML = Object.entries(cfg.points_of_interest).map(([name, p]) => {
+      const ok = s.inBox(p.lon, p.lat);
+      return `<div class="poi"><span>${name}</span><span class="chip ${ok ? "in" : "out"}">${ok ? "Med" : "Utanför"}</span></div>`;
+    }).join("");
+    document.getElementById("places").innerHTML = s.names.length ? s.names.map((n) => `<span>${n}</span>`).join("") : "<span>Inga namngivna platser</span>";
+
+    const [e, n] = toSweref(state.lon, state.lat);
+    document.getElementById("c-wgs").textContent = `${state.lat.toFixed(5)}, ${state.lon.toFixed(5)}`;
+    document.getElementById("c-sweref").textContent = `N ${fmt(Math.round(n))}  E ${fmt(Math.round(e))}`;
+    document.getElementById("size-note").textContent = SIZE_NOTES[state.size];
+    document.querySelectorAll(".sizes button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.size) === state.size)));
+    try { localStorage.setItem("tysslinge-area", JSON.stringify(state)); } catch (e2) { /* ignorera */ }
+  }
+
+  // Flytta rutan: dra i den eller klicka någonstans på kartan.
+  let drag = null;
+  square.on("mousedown", (ev) => {
+    drag = { start: ev.latlng, lat: state.lat, lon: state.lon };
+    map.dragging.disable();
+  });
+  map.on("mousemove", (ev) => {
+    if (!drag) return;
+    state.lat = drag.lat + (ev.latlng.lat - drag.start.lat);
+    state.lon = drag.lon + (ev.latlng.lng - drag.start.lng);
+    drawSquare();
+  });
+  const endDrag = () => { if (!drag) return; drag = null; map.dragging.enable(); render(); };
+  map.on("mouseup", endDrag);
+  document.addEventListener("mouseup", endDrag);
+  map.on("click", (ev) => { state.lat = ev.latlng.lat; state.lon = ev.latlng.lng; render(); });
+  square.on("click", (ev) => L.DomEvent.stop(ev));
+
+  document.querySelectorAll(".sizes button").forEach((b) => b.addEventListener("click", () => {
+    state.size = Number(b.dataset.size);
+    render();
+    map.fitBounds(square.getBounds(), { padding: [30, 30] });
+  }));
+
+  const copyBtn = document.getElementById("copy");
+  copyBtn.addEventListener("click", () => {
+    const [e, n] = toSweref(state.lon, state.lat);
+    const text = `Mittpunkt ${state.lat.toFixed(5)}, ${state.lon.toFixed(5)} (SWEREF 99 TM N ${Math.round(n)} E ${Math.round(e)}), storlek ${state.size} m`;
+    const done = () => { copyBtn.textContent = "Kopierat"; setTimeout(() => (copyBtn.textContent = "Kopiera mittpunkt och storlek"), 1800); };
+    const fallback = () => { copyBtn.textContent = text; };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e2) { fallback(); }
+  });
+
+  function restyle() {
+    areaLayer.setStyle(areaStyle);
+    lineLayer.setStyle(roadStyle);
+    bldLayer.setStyle(() => ({ stroke: false, fillColor: tok("--c-building"), fillOpacity: 0.9 }));
+    square.setStyle({ color: tok("--c-square") });
+    mask.setStyle({ fillColor: tok("--c-mask") });
+  }
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", restyle);
+  new MutationObserver(restyle).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  document.getElementById("osm-date").textContent = DATA.osm_date;
+  render();
+  map.fitBounds(square.getBounds(), { padding: [30, 30] });
+})();
+</script>

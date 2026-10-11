@@ -1,0 +1,8 @@
+# Rådata (OSM, Lantmäteriet) laddas ner med skripten och checkas inte in
+data/raw/
+data/lm/
+data/jbv/
+*.tif
+*.laz
+__pycache__/
+.venv/
