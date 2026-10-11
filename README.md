@@ -11,21 +11,23 @@ kartmodden (i3d, texturer, XML) läggs i `map/` när vi kommer dit.
 
 ## Läge just nu
 
-**Fas 1: Välj område.** Öppna `tools/omradesval.html` i en webbläsare. Dra
-rutan och jämför 2×2, 4×4 och 8×8 km. När du har bestämt dig, kopiera
-mittpunkten och storleken och uppdatera `config/area.json`.
+**Fas 1 är klar.** Kartan blir 4×4 km (4096 m, FS25 "4x") med mittpunkt
+59.26756, 15.01856 (SWEREF 99 TM N 6 569 846, E 501 058). Rutan går från
+E 499 010 till 503 106 och N 6 567 798 till 6 571 894. Den rymmer
+Tysslinge med kyrkan, Södra Valla, Stora Valla, Latorpsbruk och Rumboholm.
 
-Första analysen med mittpunkten mellan Tysslinge och Södra Valla:
+Enligt OSM innehåller rutan 917 ha åker (55 %), 109 ha skog och 429 byggnader.
+`tools/omradesval.html` visar rutan.
 
-| Storlek | Åker | Skog | Åkerskiften i OSM | Gårdsplaner | Byggnader | Med i rutan |
-|---|---|---|---|---|---|---|
-| 2×2 km | 281 ha (67 %) | 23 ha | 27 | 0 | 29 | Stora Valla, Osvalla. Varken Tysslinge eller Södra Valla får plats. |
-| 4×4 km | 881 ha (53 %) | 127 ha | 75 | 3 | 449 | Tysslinge, kyrkan, Södra Valla, Latorpsbruk, Stora Valla, Rumboholm |
-| 8×8 km | 2 507 ha (37 %) | 1 575 ha | 282 | 14 | 1 726 | Även Garphyttan, Vintrosa och E18/E20 |
+**Fas 2 pågår: hämta data.**
 
-Rekommendation: **4×4 km** (FS25 "4x"). Rutan rymmer båda platserna och nästan
-bara jordbruksbygd. 8×8 km tar med motorväg och tätorter och blir ett mycket
-stort projekt för en första karta.
+- [x] OpenStreetMap (`scripts/fetch_osm.py`)
+- [x] Jordbruksverkets block och skiften 2025, med grödor
+  (`scripts/fetch_fields.py`): 279 block och 371 skiften i rutan med 300 m
+  marginal. Ingen inloggning behövs.
+- [ ] Lantmäteriets höjdmodell, 1 m (`scripts/fetch_heightmap.py`). Kräver ett
+  Geotorget-konto, se [docs/datakallor.md](docs/datakallor.md).
+- [ ] Ortofoto som förlaga.
 
 ## Arbetsgång
 
@@ -49,6 +51,8 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r requirements.txt
 
 python scripts/fetch_osm.py           # hämtar OSM-data till data/raw/
+python scripts/fetch_fields.py        # Jordbruksverkets block och skiften
+python scripts/fetch_heightmap.py     # Lantmäteriets höjdmodell (kräver LM_USER/LM_PASSWORD)
 python scripts/analyze_area.py        # statistik per kartstorlek + data till väljaren
 python scripts/build_area_picker.py   # bygger tools/omradesval.html
 ```

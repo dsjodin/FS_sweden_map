@@ -6,8 +6,24 @@ används i en mod som publiceras.
 ## Lantmäteriet
 
 Lantmäteriets data laddas ner via **Geotorget** (geotorget.lantmateriet.se).
-Ett konto behövs, och det är gratis för öppna data. Beställ för ett område som
-täcker kartrutan plus cirka 500 m marginal.
+Ett konto behövs, och det är gratis för öppna data.
+
+### Höjdmodellen, steg för steg
+
+1. Skapa ett konto på geotorget.lantmateriet.se.
+2. Leta upp produkten **Markhöjdmodell Nedladdning, grid 1+** och godkänn
+   villkoren eller beställ åtkomst. Den är öppna data (CC BY 4.0).
+3. Kör skriptet med kontouppgifterna:
+
+   ```powershell
+   $env:LM_USER="ditt-användarnamn"; $env:LM_PASSWORD="ditt-lösenord"
+   python scripts/fetch_heightmap.py
+   ```
+
+Skriptet hittar rätt rutor via Lantmäteriets STAC-tjänst. För vår karta
+behövs rutorna 656_49, 656_50, 657_49 och 657_50, som är 10×10 km vardera.
+Skriptet läser bara den del som behövs och sparar `data/lm/hojd/dtm_area.tif`.
+Om skriptet svarar "401" har kontot ännu inte åtkomst till produkten.
 
 | Datamängd | Användning | Kommentar |
 |---|---|---|
@@ -22,8 +38,19 @@ SWEREF 99 TM, så att det är lätt att beställa rätt ruta.
 
 ## Jordbruksverket
 
-**Jordbruksblock** (blockdatabasen) finns som öppna data och visar
-åkermarkens verkliga avgränsning. Den används för att ta fram fälten i spelet.
+Jordbruksblock och **skiften** finns som öppna data via Jordbruksverkets
+WFS-tjänst (epub.sjv.se/inspire). Ingen inloggning behövs. Hämtas med
+`scripts/fetch_fields.py`.
+
+- **Block** är sammanhängande jordbruksmark som avgränsas av vägar, diken,
+  skog och liknande.
+- **Skiften** är fälten inom blocken så som lantbrukarna sökt stöd för dem,
+  med grödkod för året (`grdkod_mar`). De är den bästa källan till fältens
+  form i spelet och till vilka grödor som ska odlas var.
+
+Grödkoderna översätts i skriptet bara när de är bekräftade mot
+Jordbruksverkets texter (till exempel 2 = vårkorn, 3 = havre, 5 = vårvete,
+21 = vårraps). Övriga koder visas som siffror tills de är kontrollerade.
 
 ## OpenStreetMap
 

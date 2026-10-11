@@ -1,13 +1,34 @@
 {
   "name": "Tysslinge",
   "description": "Området runt Tysslinge och Södra Valla, Örebro kommun",
-  "center": { "lat": 59.2685, "lon": 15.0157 },
+  "center": {
+    "lat": 59.26756,
+    "lon": 15.01856
+  },
   "size_m": 4096,
   "crs": "EPSG:3006",
   "points_of_interest": {
-    "Tysslinge kyrka": { "lat": 59.2861917, "lon": 15.0200504 },
-    "Tysslinge": { "lat": 59.2810265, "lon": 15.0200350 },
-    "Södra Valla": { "lat": 59.2558723, "lon": 15.0114371 }
+    "Tysslinge kyrka": {
+      "lat": 59.2861917,
+      "lon": 15.0200504
+    },
+    "Tysslinge": {
+      "lat": 59.2810265,
+      "lon": 15.020035
+    },
+    "Södra Valla": {
+      "lat": 59.2558723,
+      "lon": 15.0114371
+    }
   },
-  "osm_bbox": { "south": 59.20, "west": 14.90, "north": 59.34, "east": 15.13 }
+  "osm_bbox": {
+    "south": 59.2,
+    "west": 14.9,
+    "north": 59.34,
+    "east": 15.13
+  },
+  "center_sweref99tm": {
+    "n": 6569846,
+    "e": 501058
+  }
 }

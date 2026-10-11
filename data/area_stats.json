@@ -1,76 +1,75 @@
 {
   "center": {
-    "lat": 59.2685,
-    "lon": 15.0157
+    "lat": 59.26756,
+    "lon": 15.01856
   },
   "sizes": {
     "2048": {
       "total_ha": 419,
       "area_ha": {
-        "farmland": 280.7,
-        "forest": 23.0,
-        "residential": 4.5,
+        "farmland": 284.2,
+        "forest": 22.3,
+        "residential": 4.8,
         "water": 1.1
       },
       "area_pct": {
-        "farmland": 66.9,
-        "forest": 5.5,
-        "residential": 1.1,
+        "farmland": 67.8,
+        "forest": 5.3,
+        "residential": 1.2,
         "water": 0.3
       },
-      "field_blocks": 27,
+      "field_blocks": 23,
       "farmyards": 0,
-      "buildings": 29,
+      "buildings": 21,
       "road_km": {
-        "gårdsväg/infart": 2.0,
         "småväg": 2.0,
-        "länsväg": 2.8,
-        "grusväg/brukningsväg": 2.6
+        "länsväg": 2.6,
+        "grusväg/brukningsväg": 2.7,
+        "gårdsväg/infart": 1.6
       },
-      "waterway_km": 5.5,
+      "waterway_km": 5.2,
       "places": [
         "Eketorp",
-        "Haglundstorp",
         "Kartorp",
         "Osvalla",
         "Stora Valla",
-        "Torpängen"
+        "Ängsholmen"
       ]
     },
     "4096": {
       "total_ha": 1678,
       "area_ha": {
-        "farmland": 880.7,
+        "farmland": 917.2,
         "farmyard": 3.3,
-        "forest": 126.8,
+        "forest": 109.4,
         "meadow": 6.6,
-        "residential": 37.7,
-        "water": 8.8,
-        "wetland": 59.2
+        "residential": 37.3,
+        "water": 9.2,
+        "wetland": 50.9
       },
       "area_pct": {
-        "farmland": 52.5,
+        "farmland": 54.7,
         "farmyard": 0.2,
-        "forest": 7.6,
+        "forest": 6.5,
         "meadow": 0.4,
         "residential": 2.2,
         "water": 0.5,
-        "wetland": 3.5
+        "wetland": 3.0
       },
-      "field_blocks": 75,
+      "field_blocks": 81,
       "farmyards": 3,
-      "buildings": 449,
+      "buildings": 429,
       "road_km": {
-        "småväg": 11.2,
-        "länsväg": 11.3,
-        "gårdsväg/infart": 12.5,
-        "grusväg/brukningsväg": 13.6
+        "småväg": 10.7,
+        "länsväg": 10.8,
+        "gårdsväg/infart": 11.6,
+        "grusväg/brukningsväg": 14.2
       },
-      "waterway_km": 16.0,
+      "waterway_km": 16.4,
       "places": [
         "Ekbacka",
         "Eketorp",
-        "Gruvgården",
+        "Erikslund",
         "Götlunda",
         "Haga",
         "Haglundstorp",
@@ -87,7 +86,6 @@
         "Rumboholm",
         "Rumbotorp",
         "Stora Valla",
-        "Södra Holmstorp",
         "Södra Valla",
         "Torpängen",
         "Tysslinge",
@@ -99,32 +97,32 @@
     "8192": {
       "total_ha": 6711,
       "area_ha": {
-        "farmland": 2506.9,
-        "farmyard": 13.4,
-        "forest": 1574.9,
-        "meadow": 49.6,
-        "residential": 135.2,
-        "water": 118.1,
-        "wetland": 216.2
+        "farmland": 2543.5,
+        "farmyard": 14.4,
+        "forest": 1534.0,
+        "meadow": 43.0,
+        "residential": 126.7,
+        "water": 116.8,
+        "wetland": 208.9
       },
       "area_pct": {
-        "farmland": 37.4,
+        "farmland": 37.9,
         "farmyard": 0.2,
-        "forest": 23.5,
-        "meadow": 0.7,
-        "residential": 2.0,
-        "water": 1.8,
-        "wetland": 3.2
+        "forest": 22.9,
+        "meadow": 0.6,
+        "residential": 1.9,
+        "water": 1.7,
+        "wetland": 3.1
       },
-      "field_blocks": 282,
-      "farmyards": 14,
-      "buildings": 1726,
+      "field_blocks": 283,
+      "farmyards": 15,
+      "buildings": 1712,
       "road_km": {
-        "länsväg": 46.7,
-        "motorväg/riksväg": 18.6,
-        "småväg": 57.0,
+        "länsväg": 44.8,
+        "motorväg/riksväg": 18.5,
+        "småväg": 56.3,
         "gårdsväg/infart": 56.8,
-        "grusväg/brukningsväg": 50.3
+        "grusväg/brukningsväg": 50.2
       },
       "waterway_km": 28.0,
       "places": [
@@ -147,6 +145,7 @@
         "Götavitorp",
         "Götlunda",
         "Haga",
+        "Hagesta",
         "Haglundstorp",
         "Hagstugan",
         "Hummelbäcken",
@@ -179,6 +178,7 @@
         "Latorpsbruk",
         "Loviseholm",
         "Lövsätter",
+        "Lövåsen",
         "Norra Holmstorp",
         "Norra Latorp",
         "Nybbletorp",
@@ -191,7 +191,6 @@
         "Rosenlund",
         "Rumboholm",
         "Rumbotorp",
-        "Sandtorp",
         "Sanna",
         "Sjömarken",
         "Skogsberg",
@@ -211,10 +210,10 @@
         "Tysslinge",
         "Vallaborg",
         "Vallskog",
+        "Valltorp",
         "Vintrosa",
-        "Västra Tomta",
-        "Västra Via",
         "Ängsholmen",
+        "Ängåsen",
         "Åkerby",
         "Åtorp",
         "Östra Via",
