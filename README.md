@@ -31,9 +31,15 @@ Enligt OSM innehåller rutan 917 ha åker (55 %), 109 ha skog och 429 byggnader.
 
 **Fas 3 har börjat.**
 
-- [ ] Höjdkarta `build/data/dem.png`, 4097×4097, 16 bitar
+- [x] Höjdkarta `build/data/dem.png`, 4097×4097, 16 bitar
   (`scripts/make_heightmap.py`). Värdena till GIANTS Editor skrivs till
   `build/heightmap.json`.
+- [x] Grundkarta från MapToPlay, 4096 m spelbar yta och 8192 m total yta,
+  med vår höjdmodell `dtm_8km.tif`.
+- [ ] Verkliga fält: `scripts/make_osm_fields.py` bygger
+  `build/tysslinge_faltskiften.osm`. Där är OSM:s åkrar utbytta mot 514
+  åkrar och 88 ängar från Jordbruksverkets skiften. Filen laddas upp som
+  vektordata i MapToPlay.
 
 ## Arbetsgång
 
@@ -63,6 +69,7 @@ python scripts/fetch_osm.py           # hämtar OSM-data till data/raw/
 python scripts/fetch_fields.py        # Jordbruksverkets block och skiften
 python scripts/fetch_heightmap.py     # Lantmäteriets höjdmodell (kräver LM_USER/LM_PASSWORD)
 python scripts/make_heightmap.py      # höjdkarta i FS25-format till build/
+python scripts/make_osm_fields.py     # OSM-fil med Jordbruksverkets skiften som åkrar
 python scripts/analyze_area.py        # statistik per kartstorlek + data till väljaren
 python scripts/build_area_picker.py   # bygger tools/omradesval.html
 ```

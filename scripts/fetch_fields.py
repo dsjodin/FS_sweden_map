@@ -8,8 +8,11 @@ Sparar i SWEREF 99 TM:
     data/raw/jbv_skiften.geojson
 
 Användning:
-    python scripts/fetch_fields.py
+    python scripts/fetch_fields.py [--margin 2048]
+
+Med --margin 2048 täcks hela 8×8 km-området runt den spelbara ytan.
 """
+import argparse
 import json
 import sys
 import urllib.parse
@@ -23,7 +26,7 @@ LAYERS = {
     "jbv_block": "inspire:senaste_arslager_block",
     "jbv_skiften": "inspire:senaste_arslager_skifte",
 }
-MARGIN = 300  # meter utanför kartrutan
+MARGIN = 2048  # meter utanför kartrutan, täcker hela 8×8 km-området
 PAGE = 1000
 
 # Grödkoder som är bekräftade mot Jordbruksverkets förordningstexter. Övriga visas som "kod N".
@@ -66,7 +69,10 @@ def fetch_layer(type_name, bbox):
 
 
 def main():
-    bbox = map_bbox(MARGIN)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--margin", type=float, default=MARGIN, help="meter utanför kartrutan")
+    args = parser.parse_args()
+    bbox = map_bbox(args.margin)
     out_dir = ROOT / "data" / "raw"
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {}
@@ -94,7 +100,7 @@ def main():
         by_crop[code][0] += 1
         by_crop[code][1] += p.get("faststalld_areal_ha") or p.get("ansokt_areal_ha") or 0
     years = sorted({f["properties"].get("arslager") for f in skiften})
-    print(f"\nSkiften {years} (ruta + {MARGIN} m marginal), per grödkod:")
+    print(f"\nSkiften {years} (ruta + {args.margin:.0f} m marginal), per grödkod:")
     for code, (n, ha) in sorted(by_crop.items(), key=lambda kv: -kv[1][1]):
         label = CROPS.get(code, f"kod {code}")
         print(f"  {label:<34} {n:>4} skiften {ha:>8.1f} ha")
