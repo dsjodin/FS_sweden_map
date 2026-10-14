@@ -32,5 +32,10 @@
   "center_sweref99tm": {
     "n": 6569846,
     "e": 501058
+  },
+  "start": {
+    "lat": 59.2558723,
+    "lon": 15.0114371,
+    "name": "Södra Valla"
   }
 }

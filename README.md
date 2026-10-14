@@ -19,7 +19,7 @@ kartor.
 
 | Karta | Område | Storlek | Läge |
 |---|---|---|---|
-| [tysslinge](maps/tysslinge/) | Tysslinge och Södra Valla, Örebro kommun | 4×4 km | Grundkarta från MapToPlay klar. Fälten byts mot Jordbruksverkets skiften. |
+| [tysslinge](maps/tysslinge/) | Tysslinge och Södra Valla, Örebro kommun | 4×4 km | Egen modd med `build_map.py`: terräng, 179 fält, 144 farmlands. Startgård vid Södra Valla. Ska provas i spelet. |
 
 ## Ny karta, steg för steg
 
@@ -47,6 +47,11 @@ Efteråt finns detta till MapToPlay:
 - `build/<namn>/<namn>_faltskiften.osm`: OSM-data där åkrarna är utbytta
   mot Jordbruksverkets skiften, att ladda upp som vektordata.
 
+Med `scripts/build_map.py` (steget `karta`) byggs en färdig modd utan
+MapToPlay: `build/<namn>/<mod_name>.zip`. Den bygger på
+`third_party/fs25_empty_map` och innehåller terräng, fält, farmlands,
+marktexturer och översiktskarta. Se [docs/fs25_kartformat.md](docs/fs25_kartformat.md).
+
 Det här finns till GIANTS Editor:
 
 - `build/<namn>/data/dem.png`: höjdkarta i FS25-format, med värdena i
@@ -70,6 +75,7 @@ du vilka steg som körs.
 | hojd | `fetch_heightmap.py` | `data/<namn>/lm/hojd/dtm_area.tif` |
 | hojd_total | `fetch_heightmap.py --total` | `data/<namn>/lm/hojd/dtm_total.tif` |
 | dem | `make_heightmap.py` | `build/<namn>/data/dem.png` |
+| karta | `build_map.py` | `build/<namn>/<mod_name>.zip`, färdig FS25-modd |
 | ortofoto | `fetch_orthophoto.py` (med `--ortofoto`) | `data/<namn>/lm/ortofoto/ortofoto.tif` |
 
 Alla skript tar `--map <namn>`. Finns bara en karta används den

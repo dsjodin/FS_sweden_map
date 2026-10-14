@@ -11,6 +11,7 @@ Steg:
     hojd         höjdmodell för kartrutan                     (fetch_heightmap.py)
     hojd_total   höjdmodell för hela området, till MapToPlay  (fetch_heightmap.py --total)
     dem          höjdkarta dem.png för FS25                   (make_heightmap.py)
+    karta        färdig FS25-modd utan MapToPlay              (build_map.py)
     ortofoto     ortofoto (bara med --ortofoto)               (fetch_orthophoto.py)
 
 Stegen som hämtar från Lantmäteriet kräver LM_USER och LM_PASSWORD. Saknas
@@ -39,6 +40,7 @@ STEPS = [
     ("hojd", ["fetch_heightmap.py"], True),
     ("hojd_total", ["fetch_heightmap.py", "--total"], True),
     ("dem", ["make_heightmap.py"], False),
+    ("karta", ["build_map.py"], False),
     ("ortofoto", ["fetch_orthophoto.py"], True),
 ]
 NAMES = [s[0] for s in STEPS]
@@ -67,7 +69,7 @@ def main():
         if needs_lm and not has_lm:
             skipped.append(name)
             continue
-        if name == "dem" and not (project.lm / "hojd" / "dtm_area.tif").exists():
+        if name in ("dem", "karta") and not (project.lm / "hojd" / "dtm_area.tif").exists():
             skipped.append(name)
             continue
         print(f"\n=== {name}: {' '.join(cmd)} ===", flush=True)
@@ -79,6 +81,8 @@ def main():
     print(f"\nKlart för {project.config.get('title', project.name)}.")
     if skipped:
         print(f"Hoppade över: {', '.join(skipped)}. Lantmäteriets steg kräver LM_USER och LM_PASSWORD.")
+    mod = project.config.get("mod_name", "FS25_" + project.name.capitalize())
+    print(f"Färdig modd: build/{project.name}/{mod}.zip")
     print(f"Till MapToPlay: data/{project.name}/lm/hojd/dtm_total.tif och build/{project.name}/{project.name}_faltskiften.osm")
     return 0
 
