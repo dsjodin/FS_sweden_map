@@ -92,3 +92,5 @@ docs/                   arbetsgång och datakällor
 - OpenStreetMap: © OpenStreetMap-bidragsgivare, ODbL.
 - Lantmäteriet och Jordbruksverket: se villkoren för respektive datamängd i
   [docs/datakallor.md](docs/datakallor.md).
+- Färdig källförteckning till modden och villkoren för ortofoto finns i
+  [docs/kallor_och_licenser.md](docs/kallor_och_licenser.md).
