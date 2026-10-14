@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """Analyserar vad olika kartstorlekar får med runt mittpunkten i config/area.json.
 
-Läser data/raw/osm.json (från fetch_osm.py), projicerar till SWEREF 99 TM
+Läser data/<namn>/raw/osm.json (från fetch_osm.py), projicerar till SWEREF 99 TM
 (EPSG:3006) och räknar ut åkermark, skog, vatten, byggnader, gårdar, vägar och
 ortnamn inom kvadrater på 2, 4 och 8 km (FS25:s kartstorlekar). Skriver:
 
-  data/area_stats.json      statistik per kartstorlek
-  data/area_features.geojson förenklade objekt (WGS84) för områdesväljaren
+  maps/<namn>/area_stats.json       statistik per kartstorlek
+  maps/<namn>/area_features.geojson förenklade objekt (WGS84) för områdesväljaren
 
 Användning:
-    python scripts/analyze_area.py [--center LAT,LON]
+    python scripts/analyze_area.py [--map tysslinge] [--center LAT,LON]
 """
 import argparse
 import json
 from collections import defaultdict
-from pathlib import Path
 
 import numpy as np
 import shapely
@@ -22,11 +21,7 @@ from pyproj import Transformer
 from shapely.geometry import LineString, Point, Polygon, box, mapping
 from shapely.ops import linemerge, polygonize, unary_union
 
-ROOT = Path(__file__).resolve().parent.parent
-CONFIG = ROOT / "config" / "area.json"
-OSM = ROOT / "data" / "raw" / "osm.json"
-STATS_OUT = ROOT / "data" / "area_stats.json"
-FEATURES_OUT = ROOT / "data" / "area_features.geojson"
+from area import add_map_argument, open_map
 
 SIZES = [2048, 4096, 8192]
 # Hur långt utanför 8 km-rutan objekt exporteras, så att rutan kan flyttas i väljaren.
@@ -94,8 +89,8 @@ def relation_polygon(rel):
     return outer if not outer.is_empty else None
 
 
-def load_features():
-    data = json.loads(OSM.read_text(encoding="utf-8"))
+def load_features(osm_path):
+    data = json.loads(osm_path.read_text(encoding="utf-8"))
     areas, roads, waterways, rail, buildings, places = [], [], [], [], [], []
     for el in data["elements"]:
         tags = el.get("tags", {})
@@ -199,22 +194,26 @@ def export_features(center, areas, roads, waterways, rail, buildings, places):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--center", help="LAT,LON (annars mittpunkten i config/area.json)")
+    add_map_argument(parser)
+    parser.add_argument("--center", help="LAT,LON (annars kartans mittpunkt)")
     args = parser.parse_args()
-    area = json.loads(CONFIG.read_text(encoding="utf-8"))
+    project = open_map(args.map)
+    area = project.config
     lat, lon = (map(float, args.center.split(",")) if args.center
                 else (area["center"]["lat"], area["center"]["lon"]))
     center = Point(to_sweref(lon, lat))
 
-    areas, roads, waterways, rail, buildings, places = load_features()
+    areas, roads, waterways, rail, buildings, places = load_features(project.raw / "osm.json")
     result = {"center": {"lat": lat, "lon": lon}, "sizes": {}}
     for size in SIZES:
         h = size / 2
         square = box(center.x - h, center.y - h, center.x + h, center.y + h)
         result["sizes"][str(size)] = stats_for(square, areas, roads, waterways, buildings, places)
 
-    STATS_OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    FEATURES_OUT.write_text(
+    stats_out = project.dir / "area_stats.json"
+    features_out = project.dir / "area_features.geojson"
+    stats_out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    features_out.write_text(
         json.dumps(export_features(center, areas, roads, waterways, rail, buildings, places),
                    ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
@@ -226,7 +225,7 @@ def main():
         print(f"  Åkerskiften (OSM) {s['field_blocks']}, gårdsplaner {s['farmyards']}, byggnader {s['buildings']}")
         print(f"  Vägar km: {s['road_km']}")
         print(f"  Orter: {', '.join(s['places'])}")
-    print(f"\nSkrev {STATS_OUT.relative_to(ROOT)} och {FEATURES_OUT.relative_to(ROOT)}")
+    print(f"\nSkrev {project.rel(stats_out)} och {project.rel(features_out)}")
 
 
 if __name__ == "__main__":

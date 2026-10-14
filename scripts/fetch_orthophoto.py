@@ -3,7 +3,7 @@
 via Lantmäteriets STAC-tjänst och sparar en sammanfogad GeoTIFF i lägre
 upplösning, lagom för kartgeneratorer och som förlaga i GIANTS Editor:
 
-    data/lm/ortofoto/ortofoto.tif   (SWEREF 99 TM, RGB, JPEG-komprimerad)
+    data/<namn>/lm/ortofoto/ortofoto.tif   (SWEREF 99 TM, RGB, JPEG-komprimerad)
 
 Kräver behörighet till Ortofoto Nedladdning på Geotorget. Kontot anges
 som för höjdmodellen, med miljövariablerna LM_USER och LM_PASSWORD.
@@ -13,7 +13,9 @@ blir enhetliga. Finns inget sådant år tas varje 2,5×2,5 km-ruta från den
 senaste flygningen. Med --year väljs ett visst år.
 
 Användning:
-    python scripts/fetch_orthophoto.py [--margin 2048] [--res 0.5] [--year 2024]
+    python scripts/fetch_orthophoto.py [--map tysslinge] [--margin M] [--res 0.5] [--year 2024]
+
+Som standard täcks hela området runt kartan (marginal = halva kartstorleken).
 """
 import argparse
 import json
@@ -30,7 +32,7 @@ from rasterio.enums import Resampling
 from rasterio.transform import from_origin
 from rasterio.windows import from_bounds
 
-from area import ROOT, map_bbox
+from area import ROOT, add_map_argument, open_map
 
 STAC_SEARCH = "https://api.lantmateriet.se/stac-bild/v1/search"
 to_wgs = Transformer.from_crs("EPSG:3006", "EPSG:4326", always_xy=True).transform
@@ -71,14 +73,18 @@ def pick_tiles(items, year=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--margin", type=float, default=2048, help="meter utanför kartrutan (standard 2048, ger 8×8 km)")
+    add_map_argument(parser)
+    parser.add_argument("--margin", type=float, help="meter utanför kartrutan (standard halva kartstorleken)")
     parser.add_argument("--res", type=float, default=0.5, help="upplösning i meter per pixel (standard 0,5)")
     parser.add_argument("--year", type=int, help="använd bara bilder från detta år")
-    parser.add_argument("--out", default="data/lm/ortofoto/ortofoto.tif", help="utfil relativt repots rot")
+    parser.add_argument("--out", help="utfil (relativt repots rot)")
     parser.add_argument("--list", action="store_true", help="visa vilka bilder som skulle användas och avsluta")
     args = parser.parse_args()
 
-    bbox = map_bbox(args.margin)
+    project = open_map(args.map)
+    if args.margin is None:
+        args.margin = project.size / 2
+    bbox = project.bbox(args.margin)
     min_e, min_n = np.floor(bbox[0]), np.floor(bbox[1])
     max_e, max_n = np.ceil(bbox[2]), np.ceil(bbox[3])
     items = search_items((min_e, min_n, max_e, max_n))
@@ -136,7 +142,7 @@ def main():
                 )
                 out[:, r0:r1, c0:c1] = data
 
-    path = ROOT / args.out
+    path = ROOT / args.out if args.out else project.lm / "ortofoto" / "ortofoto.tif"
     path.parent.mkdir(parents=True, exist_ok=True)
     profile = dict(
         driver="GTiff", width=width, height=height, count=3, dtype="uint8", crs="EPSG:3006",
@@ -146,7 +152,7 @@ def main():
     with rasterio.open(path, "w", **profile) as dst:
         dst.write(out)
     size_mb = path.stat().st_size / 1e6
-    print(f"Sparade {args.out} ({width}×{height} px, {args.res} m/px, {size_mb:.0f} MB)")
+    print(f"Sparade {project.rel(path)} ({width}×{height} px, {args.res} m/px, {size_mb:.0f} MB)")
     print("Källa: Ortofoto © Lantmäteriet (CC BY 4.0)")
     return 0
 

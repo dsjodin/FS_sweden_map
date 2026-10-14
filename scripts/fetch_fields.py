@@ -4,13 +4,14 @@
 lantbrukarna sökt stöd för, med grödkod.
 
 Sparar i SWEREF 99 TM:
-    data/raw/jbv_block.geojson
-    data/raw/jbv_skiften.geojson
+    data/<namn>/raw/jbv_block.geojson
+    data/<namn>/raw/jbv_skiften.geojson
 
 Användning:
-    python scripts/fetch_fields.py [--margin 2048]
+    python scripts/fetch_fields.py [--map tysslinge] [--margin M]
 
-Med --margin 2048 täcks hela 8×8 km-området runt den spelbara ytan.
+Som standard täcks hela området runt den spelbara ytan (marginal = halva
+kartstorleken, alltså 8×8 km för en 4×4 km-karta).
 """
 import argparse
 import json
@@ -19,14 +20,13 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 
-from area import ROOT, map_bbox
+from area import add_map_argument, open_map
 
 WFS = "https://epub.sjv.se/inspire/inspire/wfs"
 LAYERS = {
     "jbv_block": "inspire:senaste_arslager_block",
     "jbv_skiften": "inspire:senaste_arslager_skifte",
 }
-MARGIN = 2048  # meter utanför kartrutan, täcker hela 8×8 km-området
 PAGE = 1000
 
 # Grödkoder som är bekräftade mot Jordbruksverkets förordningstexter. Övriga visas som "kod N".
@@ -70,10 +70,14 @@ def fetch_layer(type_name, bbox):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--margin", type=float, default=MARGIN, help="meter utanför kartrutan")
+    add_map_argument(parser)
+    parser.add_argument("--margin", type=float, help="meter utanför kartrutan (standard halva kartstorleken)")
     args = parser.parse_args()
-    bbox = map_bbox(args.margin)
-    out_dir = ROOT / "data" / "raw"
+    project = open_map(args.map)
+    if args.margin is None:
+        args.margin = project.size / 2
+    bbox = project.bbox(args.margin)
+    out_dir = project.raw
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {}
     for name, type_name in LAYERS.items():
@@ -86,7 +90,7 @@ def main():
         }
         path = out_dir / f"{name}.geojson"
         path.write_text(json.dumps(fc, ensure_ascii=False), encoding="utf-8")
-        print(f"  {len(feats)} objekt till {path.relative_to(ROOT)}")
+        print(f"  {len(feats)} objekt till {project.rel(path)}")
         result[name] = feats
 
     skiften = result["jbv_skiften"]

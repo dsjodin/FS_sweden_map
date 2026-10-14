@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """Hämtar OSM-data (markanvändning, vägar, vatten, byggnader, ortnamn) för
-kartområdets bbox i config/area.json och sparar till data/raw/osm.json.
+kartans osm_bbox i maps/<namn>/area.json och sparar till
+data/<namn>/raw/osm.json. Används av områdesväljaren.
 
 Användning:
-    python scripts/fetch_osm.py
+    python scripts/fetch_osm.py [--map tysslinge]
 """
+import argparse
 import json
 import sys
 import time
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-CONFIG = ROOT / "config" / "area.json"
-OUT = ROOT / "data" / "raw" / "osm.json"
+from area import add_map_argument, open_map
 
 MIRRORS = [
     "https://overpass-api.de/api/interpreter",
@@ -41,9 +40,12 @@ def build_query(b):
 
 
 def main():
-    area = json.loads(CONFIG.read_text(encoding="utf-8"))
-    data = urllib.parse.urlencode({"data": build_query(area["osm_bbox"])}).encode()
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser()
+    add_map_argument(parser)
+    project = open_map(parser.parse_args().map)
+    out = project.raw / "osm.json"
+    data = urllib.parse.urlencode({"data": build_query(project.config["osm_bbox"])}).encode()
+    out.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(3):
         for url in MIRRORS:
             print(f"Hämtar från {url} ...")
@@ -56,8 +58,8 @@ def main():
                 print(f"  misslyckades: {exc}")
                 time.sleep(4 * (attempt + 1))
                 continue
-            OUT.write_bytes(body)
-            print(f"Sparade {len(body) / 1e6:.1f} MB till {OUT.relative_to(ROOT)}")
+            out.write_bytes(body)
+            print(f"Sparade {len(body) / 1e6:.1f} MB till {project.rel(out)}")
             return 0
     print("Kunde inte hämta OSM-data från någon server.", file=sys.stderr)
     return 1

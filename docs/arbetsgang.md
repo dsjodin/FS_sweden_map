@@ -19,12 +19,14 @@ GIANTS Editor finns för Windows och macOS. Skripten i repot fungerar överallt.
 
 ## Fas 1: Välj område och storlek
 
-- Öppna `tools/omradesval.html`, flytta rutan och jämför storlekarna.
-- Bestäm mittpunkt och storlek, och för in dem i `config/area.json`.
+- Skapa kartan med `scripts/new_map.py` och bygg områdesväljaren med
+  `scripts/pipeline.py --map <namn> --only osm analys valjare`.
+- Öppna `maps/<namn>/omradesval.html`, flytta rutan och jämför storlekarna.
+- Bestäm mittpunkt och storlek, och för in dem i `maps/<namn>/area.json`.
 - FS25 stöder kartstorlekarna 2048, 4096, 8192 och 16384 m. En meter i
   verkligheten blir en meter i spelet.
 
-**Klart när:** `config/area.json` har rätt mittpunkt och storlek.
+**Klart när:** `maps/<namn>/area.json` har rätt mittpunkt och storlek.
 
 ## Fas 2: Hämta data
 
@@ -40,7 +42,7 @@ Se [datakallor.md](datakallor.md). Kortfattat:
    vilket är bättre än OSM.
 5. **OpenStreetMap** som komplement (redan hämtat).
 
-**Klart när:** all rådata ligger i `data/raw/` och `data/lm/`, klippt till
+**Klart när:** all rådata ligger i `data/<namn>/raw/` och `data/<namn>/lm/`, klippt till
 området med lite marginal.
 
 ## Fas 3: Gör om datan till FS25-format

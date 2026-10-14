@@ -37,14 +37,27 @@ Python 3.11 (Debian 12) och senare fungerar.
 
 ```bash
 source .venv/bin/activate
-python scripts/fetch_osm.py
-python scripts/fetch_fields.py
 
-# Höjdmodellen kräver Geotorget-kontot. Läs in lösenordet utan att det
+# Lantmäteriets steg kräver Geotorget-kontot. Läs in lösenordet utan att det
 # hamnar i skalhistoriken:
 export LM_USER=ditt-användarnamn
 read -rs LM_PASSWORD && export LM_PASSWORD
-python scripts/fetch_heightmap.py
+
+# Hela kedjan för en karta (se README för en ny karta):
+python scripts/pipeline.py --map tysslinge
+```
+
+### Flytta data från den gamla mappstrukturen
+
+Före stödet för flera kartor låg Tysslinges data direkt i `data/` och
+`build/`. Efter `git pull` flyttar du den en gång:
+
+```bash
+mkdir -p data/tysslinge build/tysslinge
+[ -d data/raw ] && mv data/raw data/tysslinge/
+[ -d data/lm ] && mv data/lm data/tysslinge/
+[ -f data/tysslinge/lm/hojd/dtm_8km.tif ] && mv data/tysslinge/lm/hojd/dtm_8km.tif data/tysslinge/lm/hojd/dtm_total.tif
+for f in data preview heightmap.json; do [ -e build/$f ] && mv build/$f build/tysslinge/; done
 ```
 
 ### 4. Kartgeneratorer
@@ -71,7 +84,7 @@ Har du ändrat eller genererat filer som inte checkas in, hämtar du dem med
 `scp` från PowerShell. `scp` ingår i Windows 10 och 11:
 
 ```powershell
-scp -r användare@server:~/FS_sweden_map/data/lm/hojd .\hojd
+scp -r användare@server:~/FS_sweden_map/data/tysslinge/lm/hojd .\hojd
 ```
 
 Har du hellre ett grafiskt program fungerar WinSCP lika bra.

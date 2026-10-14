@@ -1,4 +1,4 @@
-<title>Tysslinge kartområde</title>
+<title>__MAP_TITLE__ kartområde</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -110,10 +110,10 @@ td.n { text-align: right; font-family: var(--f-mono); font-size: 12.5px; font-va
 </style>
 
 <div class="app">
-  <div id="map" role="application" aria-label="Karta över Tysslinge med kartruta"></div>
+  <div id="map" role="application" aria-label="Karta över __MAP_TITLE__ med kartruta"></div>
   <aside class="panel">
     <header>
-      <h1>Tysslinge kartområde</h1>
+      <h1>__MAP_TITLE__ kartområde</h1>
       <p class="lede">Dra den blå rutan eller klicka på kartan för att flytta den. Siffrorna gäller det som ryms inom rutan.</p>
     </header>
 
@@ -148,8 +148,8 @@ td.n { text-align: right; font-family: var(--f-mono); font-size: 12.5px; font-va
       <table><tbody id="roads"></tbody></table>
     </section>
 
-    <section>
-      <p class="eyebrow">Platser du nämnde</p>
+    <section id="pois-section">
+      <p class="eyebrow">Utvalda platser</p>
       <div class="pois" id="pois"></div>
     </section>
 
@@ -182,9 +182,9 @@ td.n { text-align: right; font-family: var(--f-mono); font-size: 12.5px; font-va
   const toWgs = (e, n) => proj4("EPSG:3006", "EPSG:4326", [e, n]);
 
   const SIZE_NOTES = {
-    2048: "Standardstorlek. Snabbast att bygga och lättast för datorn, men rymmer inte både Tysslinge och Södra Valla.",
+    2048: "Standardstorlek. Snabbast att bygga och lättast för datorn, men rymmer minst av omgivningen.",
     4096: "Fyra gånger standardytan. Rimligt för ett första eget projekt som ska likna verkligheten, men kräver mer arbete med fält och objekt.",
-    8192: "Sexton gånger standardytan. Mycket stort projekt med motorväg och tätorter i kanten. Kräver kraftig dator och många månaders arbete.",
+    8192: "Sexton gånger standardytan. Mycket stort projekt som kräver kraftig dator och många månaders arbete.",
   };
 
   const COVER = [
@@ -205,9 +205,12 @@ td.n { text-align: right; font-family: var(--f-mono); font-size: 12.5px; font-va
   ];
 
   const cfg = DATA.config;
+  cfg.points_of_interest = cfg.points_of_interest || {};
+  const STORE_KEY = "fs-area-" + (cfg.name || "karta");
+  document.getElementById("pois-section").hidden = Object.keys(cfg.points_of_interest).length === 0;
   const state = { lat: cfg.center.lat, lon: cfg.center.lon, size: cfg.size_m };
   try {
-    const saved = JSON.parse(localStorage.getItem("tysslinge-area") || "null");
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
     if (saved && saved.lat && saved.lon && saved.size) Object.assign(state, saved);
   } catch (e) { /* lagring saknas, använd standard */ }
 
@@ -351,7 +354,7 @@ td.n { text-align: right; font-family: var(--f-mono); font-size: 12.5px; font-va
     document.getElementById("c-sweref").textContent = `N ${fmt(Math.round(n))}  E ${fmt(Math.round(e))}`;
     document.getElementById("size-note").textContent = SIZE_NOTES[state.size];
     document.querySelectorAll(".sizes button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.size) === state.size)));
-    try { localStorage.setItem("tysslinge-area", JSON.stringify(state)); } catch (e2) { /* ignorera */ }
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e2) { /* ignorera */ }
   }
 
   // Flytta rutan: dra i den eller klicka någonstans på kartan.

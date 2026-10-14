@@ -27,7 +27,8 @@ Ett konto behövs, och det är gratis för öppna data.
 
 Skriptet hittar rätt rutor via Lantmäteriets STAC-tjänst. För vår karta
 behövs rutorna 656_49, 656_50, 657_49 och 657_50, som är 10×10 km vardera.
-Skriptet läser bara den del som behövs och sparar `data/lm/hojd/dtm_area.tif`.
+Skriptet läser bara den del som behövs och sparar `data/<namn>/lm/hojd/dtm_area.tif`.
+Med `--total` hämtas hela området runt kartan till `dtm_total.tif`, för MapToPlay.
 Om skriptet svarar "401" har kontot ännu inte åtkomst till produkten.
 
 | Datamängd | Användning | Kommentar |
@@ -65,11 +66,11 @@ komplement. Licens: ODbL. Ange "© OpenStreetMap-bidragsgivare" i modden.
 ## Mappstruktur för rådata
 
 ```
-data/raw/osm.json        OSM (fetch_osm.py)
-data/lm/hojd/            Lantmäteriet höjdmodell (GeoTIFF)
-data/lm/ortofoto/        Lantmäteriet ortofoto
-data/lm/topografi/       Lantmäteriet vektordata
-data/jbv/                Jordbruksverkets jordbruksblock
+data/<namn>/raw/osm.json            OSM till områdesväljaren (fetch_osm.py)
+data/<namn>/raw/osm_full.osm        fullständig OSM (make_osm_fields.py)
+data/<namn>/raw/jbv_*.geojson       Jordbruksverkets block och skiften (fetch_fields.py)
+data/<namn>/lm/hojd/                Lantmäteriets höjdmodell (fetch_heightmap.py)
+data/<namn>/lm/ortofoto/            Lantmäteriets ortofoto (fetch_orthophoto.py)
 ```
 
 Rådata checkas inte in i git eftersom filerna är stora (se `.gitignore`).

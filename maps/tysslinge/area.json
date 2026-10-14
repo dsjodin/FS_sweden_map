@@ -1,5 +1,7 @@
 {
-  "name": "Tysslinge",
+  "name": "tysslinge",
+  "title": "Tysslinge",
+  "mod_name": "FS25_Tysslinge",
   "description": "Området runt Tysslinge och Södra Valla, Örebro kommun",
   "center": {
     "lat": 59.26756,

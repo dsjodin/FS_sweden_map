@@ -2,18 +2,18 @@
 """Bygger en OSM-fil för kartgeneratorn (MapToPlay) där OpenStreetMaps
 åkrar är utbytta mot Jordbruksverkets verkliga skiften.
 
-1. Hämtar fullständig OSM-data för hela 8×8 km-området (om den saknas):
-   data/raw/osm_full.osm
+1. Hämtar fullständig OSM-data för hela området runt kartan (dubbla
+   kartstorleken) om den saknas: data/<namn>/raw/osm_full.osm
 2. Tar bort alla OSM-ytor med landuse=farmland, och ängar (landuse=meadow)
    som till mer än hälften täcks av skiften.
-3. Lägger till skiftena från data/raw/jbv_skiften.geojson som nya ytor:
+3. Lägger till skiftena från data/<namn>/raw/jbv_skiften.geojson som nya ytor:
    åkrar som landuse=farmland, betesmark och slåtteräng som landuse=meadow.
    Varje skifte krymps 1,5 m runt om, så att intilliggande skiften blir
    separata fält med en smal ren emellan.
-4. Skriver build/tysslinge_faltskiften.osm
+4. Skriver build/<namn>/<namn>_faltskiften.osm
 
 Kör fetch_fields.py först. Användning:
-    python scripts/make_osm_fields.py [--shrink 1.5] [--min-area 0.5]
+    python scripts/make_osm_fields.py [--map tysslinge] [--shrink 1.5] [--min-area 0.5]
 """
 import argparse
 import json
@@ -27,12 +27,7 @@ from pyproj import Transformer
 from shapely.geometry import Polygon, shape
 from shapely.strtree import STRtree
 
-from area import ROOT, map_bbox
-
-OSM_FULL = ROOT / "data" / "raw" / "osm_full.osm"
-SKIFTEN = ROOT / "data" / "raw" / "jbv_skiften.geojson"
-OUT = ROOT / "build" / "tysslinge_faltskiften.osm"
-MARGIN = 2048  # samma område som höjdmodellen dtm_8km.tif
+from area import add_map_argument, open_map
 
 MIRRORS = [
     "https://overpass-api.de/api/interpreter",
@@ -53,8 +48,9 @@ CROP_TAGS = {1: "barley", 2: "barley", 3: "oats", 4: "wheat", 5: "wheat",
              20: "rape", 21: "rape", 49: "grass", 50: "grass"}
 
 
-def download_full_osm():
-    min_e, min_n, max_e, max_n = map_bbox(MARGIN + 100)
+def download_full_osm(project, out):
+    # Samma område som dtm_total.tif (halva kartstorleken runt om) plus 100 m.
+    min_e, min_n, max_e, max_n = project.bbox(project.size / 2 + 100)
     lon0, lat0 = to_wgs(min_e, min_n)
     lon1, lat1 = to_wgs(max_e, max_n)
     bbox = f"{lat0:.6f},{lon0:.6f},{lat1:.6f},{lon1:.6f}"
@@ -73,8 +69,8 @@ def download_full_osm():
                 print(f"  misslyckades: {exc}")
                 time.sleep(4 * (attempt + 1))
                 continue
-            OSM_FULL.parent.mkdir(parents=True, exist_ok=True)
-            OSM_FULL.write_bytes(body)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(body)
             print(f"  sparade {len(body) / 1e6:.1f} MB")
             return True
     return False
@@ -86,14 +82,19 @@ def tags_of(el):
 
 def main():
     parser = argparse.ArgumentParser()
+    add_map_argument(parser)
     parser.add_argument("--shrink", type=float, default=1.5, help="meter som varje skifte krymps runt om")
     parser.add_argument("--min-area", type=float, default=0.5, help="minsta skifte i hektar som tas med")
     args = parser.parse_args()
 
+    project = open_map(args.map)
+    SKIFTEN = project.raw / "jbv_skiften.geojson"
+    OSM_FULL = project.raw / "osm_full.osm"
+    OUT = project.build / f"{project.name}_faltskiften.osm"
     if not SKIFTEN.exists():
-        print("Hittar inte data/raw/jbv_skiften.geojson. Kör scripts/fetch_fields.py först.", file=sys.stderr)
+        print(f"Hittar inte {project.rel(SKIFTEN)}. Kör scripts/fetch_fields.py först.", file=sys.stderr)
         return 1
-    if not OSM_FULL.exists() and not download_full_osm():
+    if not OSM_FULL.exists() and not download_full_osm(project, OSM_FULL):
         print("Kunde inte hämta OSM-data.", file=sys.stderr)
         return 1
 
@@ -184,7 +185,7 @@ def main():
 
     print(f"Tog bort {removed_farmland} OSM-åkrar och {removed_meadow} OSM-ängar som täcks av skiften")
     print(f"La till {n_farmland} åkrar och {n_meadow} ängar från Jordbruksverket")
-    print(f"Skrev {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1e6:.1f} MB)")
+    print(f"Skrev {project.rel(OUT)} ({OUT.stat().st_size / 1e6:.1f} MB)")
     return 0
 
 

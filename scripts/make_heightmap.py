@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gör om Lantmäteriets höjdmodell (data/lm/hojd/dtm_area.tif) till FS25:s
+"""Gör om Lantmäteriets höjdmodell (data/<namn>/lm/hojd/dtm_area.tif) till FS25:s
 höjdkarta.
 
 FS25 vill ha en 16-bitars gråskale-PNG på (kartstorlek + 1) pixlar i fyrkant,
@@ -12,12 +12,12 @@ lägsta punkten. Skalan blir 1:1, så en meter i verkligheten blir en meter i
 spelet.
 
 Skriver:
-    build/data/dem.png            höjdkartan till kartmappen
-    build/preview/dem_hillshade.png  förhandsvisning med skuggning (1024 px)
-    build/heightmap.json          värden att föra in i GIANTS Editor
+    build/<namn>/data/dem.png               höjdkartan till kartmappen
+    build/<namn>/preview/dem_hillshade.png  förhandsvisning med skuggning (1024 px)
+    build/<namn>/heightmap.json             värden att föra in i GIANTS Editor
 
 Användning:
-    python scripts/make_heightmap.py [--height-scale 255] [--floor 10]
+    python scripts/make_heightmap.py [--map tysslinge] [--height-scale 255] [--floor 10]
 """
 import argparse
 import json
@@ -29,13 +29,10 @@ from PIL import Image
 from rasterio.transform import from_origin
 from rasterio.warp import Resampling, reproject
 
-from area import ROOT, load_config, to_sweref
-
-SRC = ROOT / "data" / "lm" / "hojd" / "dtm_area.tif"
-BUILD = ROOT / "build"
+from area import add_map_argument, open_map, to_sweref
 
 
-def resample_to_map_grid(cfg):
+def resample_to_map_grid(cfg, src_path):
     """Läser höjdmodellen i ett rutnät där pixlarnas mitt ligger på kartans hela meter."""
     size = cfg["size_m"]
     e, n = to_sweref(cfg["center"]["lon"], cfg["center"]["lat"])
@@ -44,7 +41,7 @@ def resample_to_map_grid(cfg):
     # Pixel (0, 0) ska ha sin mittpunkt i kartans nordvästra hörn.
     dst_transform = from_origin(west - 0.5, north + 0.5, 1.0, 1.0)
     out = np.full((pixels, pixels), np.nan, dtype=np.float32)
-    with rasterio.open(SRC) as src:
+    with rasterio.open(src_path) as src:
         reproject(
             source=rasterio.band(src, 1),
             destination=out,
@@ -70,21 +67,25 @@ def hillshade(z, azimuth=315, altitude=45):
 
 def main():
     parser = argparse.ArgumentParser()
+    add_map_argument(parser)
     parser.add_argument("--height-scale", type=float, default=255.0,
                         help="Kartans heightScale i meter (standard 255)")
     parser.add_argument("--floor", type=float, default=10.0,
                         help="Meter mellan spelets nollnivå och den lägsta verkliga punkten")
     args = parser.parse_args()
 
-    if not SRC.exists():
-        print(f"Hittar inte {SRC.relative_to(ROOT)}. Kör scripts/fetch_heightmap.py först.", file=sys.stderr)
+    project = open_map(args.map)
+    src = project.lm / "hojd" / "dtm_area.tif"
+    BUILD = project.build
+    if not src.exists():
+        print(f"Hittar inte {project.rel(src)}. Kör scripts/fetch_heightmap.py först.", file=sys.stderr)
         return 1
 
-    cfg = load_config()
-    z = resample_to_map_grid(cfg)
+    cfg = project.config
+    z = resample_to_map_grid(cfg, src)
     missing = np.isnan(z)
     if missing.all():
-        print("Höjdmodellen täcker inte kartrutan. Kontrollera config/area.json.", file=sys.stderr)
+        print(f"Höjdmodellen täcker inte kartrutan. Kontrollera maps/{project.name}/area.json.", file=sys.stderr)
         return 1
     if missing.any():
         print(f"Varning: {missing.sum()} pixlar saknar höjd och sätts till lägsta höjden.", file=sys.stderr)
@@ -120,8 +121,8 @@ def main():
     }
     (BUILD / "heightmap.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"Skrev build/data/dem.png ({dem.shape[1]}×{dem.shape[0]} px, 16 bitar)")
-    print(f"Skrev build/preview/dem_hillshade.png")
+    print(f"Skrev {project.rel(BUILD / 'data' / 'dem.png')} ({dem.shape[1]}×{dem.shape[0]} px, 16 bitar)")
+    print(f"Skrev {project.rel(BUILD / 'preview' / 'dem_hillshade.png')}")
     print(f"Verklig höjd {real_min:.1f}–{real_max:.1f} m blir {args.floor:.1f}–{real_max - base:.1f} m i spelet "
           f"(heightScale {args.height_scale:.0f}, steg {info['height_step_mm']} mm)")
     return 0

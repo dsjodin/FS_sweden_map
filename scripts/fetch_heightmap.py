@@ -2,7 +2,11 @@
 """Hämtar Lantmäteriets Markhöjdmodell (1 m grid, CC BY 4.0) för kartrutan via
 Lantmäteriets STAC-tjänst och sparar en sammanfogad, klippt GeoTIFF:
 
-    data/lm/hojd/dtm_area.tif   (SWEREF 99 TM, höjd i RH 2000, meter)
+    data/<namn>/lm/hojd/dtm_area.tif    kartrutan + 64 m, till make_heightmap.py
+    data/<namn>/lm/hojd/dtm_total.tif   med --total: hela området runt kartan
+                                        (dubbla kartstorleken), till MapToPlay
+
+Allt i SWEREF 99 TM, höjd i RH 2000, meter.
 
 Nedladdningen kräver inloggning med ett Geotorget-konto (gratis). Ange
 uppgifterna som miljövariabler:
@@ -14,10 +18,7 @@ Bara den del av varje 10×10 km-ruta som behövs läses (filerna är
 molnoptimerade), så nedladdningen blir liten.
 
 Användning:
-    python scripts/fetch_heightmap.py [--margin 64] [--out data/lm/hojd/dtm_area.tif]
-
-Med större --margin går det att hämta även omgivningen, till exempel till
-en kartgenerator som vill ha bakgrundsterräng runt den spelbara ytan.
+    python scripts/fetch_heightmap.py [--map tysslinge] [--total] [--margin M] [--out FIL]
 """
 import argparse
 import json
@@ -32,7 +33,7 @@ from rasterio.transform import from_origin
 from rasterio.windows import from_bounds
 from pyproj import Transformer
 
-from area import ROOT, map_bbox
+from area import ROOT, add_map_argument, open_map
 
 STAC_SEARCH = "https://api.lantmateriet.se/stac-hojd/v1/search"
 COLLECTION = "dtm-cog"
@@ -58,9 +59,17 @@ def find_tiles(bbox):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--margin", type=float, default=MARGIN, help="meter utanför kartrutan")
-    parser.add_argument("--out", default="data/lm/hojd/dtm_area.tif", help="utfil relativt repots rot")
+    add_map_argument(parser)
+    parser.add_argument("--total", action="store_true",
+                        help="hämta hela området runt kartan (för MapToPlay) till dtm_total.tif")
+    parser.add_argument("--margin", type=float, help="meter utanför kartrutan")
+    parser.add_argument("--out", help="utfil (relativt repots rot)")
     args = parser.parse_args()
+    project = open_map(args.map)
+    if args.margin is None:
+        args.margin = project.size / 2 if args.total else MARGIN
+    path = (ROOT / args.out if args.out else
+            project.lm / "hojd" / ("dtm_total.tif" if args.total else "dtm_area.tif"))
 
     user, password = os.environ.get("LM_USER"), os.environ.get("LM_PASSWORD")
     if not user or not password:
@@ -68,7 +77,7 @@ def main():
               file=sys.stderr)
         return 1
 
-    bbox = map_bbox(args.margin)
+    bbox = project.bbox(args.margin)
     # Avrunda till hela meter så att pixlarna linjerar med Lantmäteriets grid.
     min_e, min_n = np.floor(bbox[0]), np.floor(bbox[1])
     max_e, max_n = np.ceil(bbox[2]), np.ceil(bbox[3])
@@ -109,7 +118,6 @@ def main():
     if missing:
         print(f"Varning: {missing} pixlar saknar höjd.", file=sys.stderr)
 
-    path = ROOT / args.out
     path.parent.mkdir(parents=True, exist_ok=True)
     with rasterio.open(path, "w", driver="GTiff", width=width, height=height, count=1, dtype="float32",
                        crs="EPSG:3006", transform=transform, nodata=NODATA, compress="deflate",
@@ -117,7 +125,7 @@ def main():
         dst.write(out, 1)
 
     valid = out[out != NODATA]
-    print(f"Sparade {path.relative_to(ROOT)} ({width}×{height} m)")
+    print(f"Sparade {project.rel(path)} ({width}×{height} m)")
     print(f"Höjd: lägst {valid.min():.1f} m, högst {valid.max():.1f} m, skillnad {valid.max() - valid.min():.1f} m")
     return 0
 
