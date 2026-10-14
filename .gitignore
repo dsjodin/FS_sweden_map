@@ -8,3 +8,6 @@ __pycache__/
 
 # Genererade kartfiler (stora, skapas med skripten)
 build/
+
+# Testbyggen från fs25_empty_map
+third_party/fs25_empty_map/out/
