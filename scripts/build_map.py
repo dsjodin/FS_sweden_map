@@ -69,6 +69,8 @@ GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
 MIN_FIELD_HA = 0.5
+ROAD_MARGIN = 1.5            # m fri kant mellan vägkant och fält
+WATER_CUT = {"river": 8, "canal": 4, "stream": 3, "ditch": 1.5, "drain": 1.5}  # halv bredd inkl. kant, m
 OVERVIEW_COLORS = {
     "grass01": (126, 146, 84), "forestNeedels01": (52, 82, 46), "gravelSmall01": (150, 140, 120),
     "mudDark01": (168, 140, 92), "gravel01": (190, 176, 150), "asphalt01": (70, 70, 72),
@@ -137,8 +139,22 @@ def make_dem(project, world, floor):
     return dem, height_at, base, float(out.max())
 
 
-def load_fields(project, world):
-    """Skiften inom kartan som fält: (polygon i SWEREF, blockid, grödkod)."""
+def obstacles(roads, waterways, world):
+    """Vägar och vattendrag som buffrade ytor, att skära bort ur fälten."""
+    sq = world.square(-50)
+    parts = []
+    for cls, line in roads:
+        if line.intersects(sq):
+            parts.append(line.buffer(ROAD_STYLE[cls][1] / 2 + ROAD_MARGIN, cap_style="flat"))
+    for kind, line in waterways:
+        if kind in WATER_CUT and line.intersects(sq):
+            parts.append(line.buffer(WATER_CUT[kind], cap_style="flat"))
+    return unary_union(parts)
+
+
+def load_fields(project, world, cut):
+    """Skiften inom kartan som fält: (polygon i SWEREF, blockid, grödkod). Vägar och
+    vattendrag skärs bort, så ett skifte som korsas av en väg blir flera fält."""
     path = project.raw / "jbv_skiften.geojson"
     if not path.exists():
         sys.exit(f"Hittar inte {project.rel(path)}. Kör fetch_fields.py först.")
@@ -149,6 +165,9 @@ def load_fields(project, world):
         if p.get("grdkod_mar") in MEADOW_CODES:
             continue
         geom = shape(f["geometry"]).buffer(0).buffer(-FIELD_SHRINK, join_style="mitre").intersection(inner)
+        if geom.intersects(cut):
+            # Skär bort vägar och vatten, och rensa bort remsor smalare än 4 m längs kanterna.
+            geom = geom.difference(cut).buffer(-2, join_style="mitre").buffer(2, join_style="mitre")
         geom = geom.simplify(1.0, preserve_topology=True)
         parts = [geom] if geom.geom_type == "Polygon" else [g for g in getattr(geom, "geoms", []) if g.geom_type == "Polygon"]
         for part in parts:
@@ -158,9 +177,9 @@ def load_fields(project, world):
     return fields
 
 
-def ground_labels(project, world, fields, res):
+def ground_labels(osm, world, fields, res):
     """Etikettbild (index i GROUND) för marklagren, 1 pixel per meter."""
-    areas, roads, _waterways, _rail, _buildings, _places = load_features(project.raw / "osm.json")
+    areas, roads = osm[0], osm[1]
     img = Image.new("L", (res, res), 0)
     d = ImageDraw.Draw(img)
     idx = {name: i for i, (name, _) in enumerate(GROUND)}
@@ -181,7 +200,7 @@ def ground_labels(project, world, fields, res):
                 continue
             d.line([world.px(x, y, res) for x, y in line.coords], fill=idx[name],
                    width=max(1, int(round(width * res / world.size))), joint="curve")
-    return np.array(img), areas, roads
+    return np.array(img)
 
 
 def build(project, args):
@@ -199,8 +218,9 @@ def build(project, args):
     print("Höjdkarta ...")
     dem, height_at, base, real_max = make_dem(project, world, args.floor)
     print("Fält och marklager ...")
-    fields = load_fields(project, world)
-    labels, _areas, _roads = ground_labels(project, world, fields, cfg.weight_res)
+    osm = load_features(project.raw / "osm.json")
+    fields = load_fields(project, world, obstacles(osm[1], osm[2], world))
+    labels = ground_labels(osm, world, fields, cfg.weight_res)
 
     # Farmlands: ett per jordbruksblock med fält. Startgården = blocket närmast startpunkten.
     start = cfg_map.get("start") or cfg_map["center"]
@@ -268,7 +288,7 @@ def build(project, args):
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
     write_farmlands(maps_dir / "farmlands.xml", order)
     write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""))
-    make_overview(maps_dir / "overview.png", labels, project, world, cfg.overview_res)
+    make_overview(maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
 
     missing = [f for f in local_files if not (maps_dir / f).exists()]
     if missing:
@@ -349,11 +369,11 @@ def write_moddesc_description(path, title, description):
     path.write_text(s, encoding="utf-8")
 
 
-def make_overview(path, labels, project, world, res):
+def make_overview(path, labels, osm, world, res):
     palette = np.array([OVERVIEW_COLORS[name] for name, _ in GROUND], dtype=np.uint8)
     img = Image.fromarray(palette[labels]).resize((res, res), Image.NEAREST)
     d = ImageDraw.Draw(img)
-    areas, _roads, waterways, _rail, buildings, _places = load_features(project.raw / "osm.json")
+    areas, _roads, waterways, _rail, buildings, _places = osm
     for cls, geom in areas:
         if cls == "water":
             draw_polygon(d, geom, world, res, (88, 130, 170), (88, 130, 170))
