@@ -11,8 +11,9 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
   markområde. Blocket närmast startpunkten ägs från start.
 - marktexturer från OSM: asfalt, grus, skogsmark, åkerjord och gräs
 - översiktskarta (PDA) ritad från samma data
-
-Grödor planteras inte än. Fälten är kultiverade och sås i spelet.
+- träd i OSM:s skogar, startgård med gårdshus, maskinhall och silo, en
+  spannmålsmottagning och plats för köpta fordon (scripts/fs25_objects.py)
+- fältens grödor vid nytt spel från skiftenas grödkoder (maps/fields.xml)
 
 Kräver: fetch_osm.py, fetch_fields.py och fetch_heightmap.py för kartan.
 
@@ -47,11 +48,12 @@ import gen_data  # noqa: E402
 import gen_i3d  # noqa: E402
 import mapcfg  # noqa: E402
 from analyze_area import load_features  # noqa: E402
+import fs25_objects as obj  # noqa: E402
 
 # Marklager (namn i spelets standarduppsättning) i prioritetsordning: senare vinner.
 GROUND = [
     ("grass01", "gräs"),
-    ("forestNeedels01", "skog"),
+    ("forestLeaves01", "skog"),
     ("gravelSmall01", "gårdsplan"),
     ("mudDark01", "åker"),
     ("gravel01", "grusväg"),
@@ -72,7 +74,7 @@ MIN_FIELD_HA = 0.5
 ROAD_MARGIN = 1.5            # m fri kant mellan vägkant och fält
 WATER_CUT = {"river": 8, "canal": 4, "stream": 3, "ditch": 1.5, "drain": 1.5}  # halv bredd inkl. kant, m
 OVERVIEW_COLORS = {
-    "grass01": (126, 146, 84), "forestNeedels01": (52, 82, 46), "gravelSmall01": (150, 140, 120),
+    "grass01": (126, 146, 84), "forestLeaves01": (52, 82, 46), "gravelSmall01": (150, 140, 120),
     "mudDark01": (168, 140, 92), "gravel01": (190, 176, 150), "asphalt01": (70, 70, 72),
 }
 
@@ -129,14 +131,18 @@ def make_dem(project, world, floor):
     scale = gen_i3d.HEIGHT_SCALE
     if game.max() > scale:
         sys.exit(f"Terrängen blir {game.max():.0f} m hög, mer än heightScale {scale}.")
-    dem = np.round(game / scale * 65535).astype(np.uint16)
+    return game, base, float(out.max())
+
+
+def height_sampler(game, world):
+    n = game.shape[0]
 
     def height_at(e, n_):
         c, r = world.px(e, n_, n - 1)
         c, r = int(round(min(max(c, 0), n - 1))), int(round(min(max(r, 0), n - 1)))
         return float(game[r, c])
 
-    return dem, height_at, base, float(out.max())
+    return height_at
 
 
 def obstacles(roads, waterways, world):
@@ -188,7 +194,7 @@ def ground_labels(osm, world, fields, res):
         if not geom.intersects(sq):
             continue
         if cls == "forest":
-            draw_polygon(d, geom, world, res, idx["forestNeedels01"], idx["grass01"])
+            draw_polygon(d, geom, world, res, idx["forestLeaves01"], idx["grass01"])
         elif cls in ("farmyard", "residential"):
             draw_polygon(d, geom, world, res, idx["gravelSmall01"], idx["grass01"])
     for geom, _, _ in fields:
@@ -216,11 +222,12 @@ def build(project, args):
     data_dir.mkdir(parents=True, exist_ok=True)
 
     print("Höjdkarta ...")
-    dem, height_at, base, real_max = make_dem(project, world, args.floor)
+    game, base, real_max = make_dem(project, world, args.floor)
     print("Fält och marklager ...")
     osm = load_features(project.raw / "osm.json")
     fields = load_fields(project, world, obstacles(osm[1], osm[2], world))
     labels = ground_labels(osm, world, fields, cfg.weight_res)
+    cut = obstacles(osm[1], osm[2], world)
 
     # Farmlands: ett per jordbruksblock med fält. Startgården = blocket närmast startpunkten.
     start = cfg_map.get("start") or cfg_map["center"]
@@ -234,6 +241,31 @@ def build(project, args):
     if len(order) > 254:
         sys.exit(f"{len(order)} block med fält, men farmland-lagret rymmer högst 254.")
     farmland_id = {b: i + 1 for i, b in enumerate(order)}
+
+    print("Gård, spannmålsmottagning och planering ...")
+    areas, roads, _ww, _rail, buildings, _pl = osm
+    field_union = unary_union([g.buffer(3) for g, _, _ in fields])
+    inner = world.square(150)
+    farm = obj.farm_site(start_pt, [g for c, g in areas if c == "farmyard"], unary_union([field_union, cut]), inner)
+    if farm is None:
+        sys.exit("Hittade ingen ledig plats för startgården nära startpunkten.")
+    mill_blocked = unary_union([field_union, cut, farm.box.buffer(200)]
+                               + [g for c, g in areas if c in ("forest", "water", "residential")] + buildings)
+    mill = obj.mill_site(roads, farm, mill_blocked, inner)
+    sites = [farm] + ([mill] if mill else [])
+    obj.flatten(game, world, sites)
+    if game.max() > gen_i3d.HEIGHT_SCALE or game.min() < 0:
+        sys.exit("Höjderna hamnar utanför heightScale efter planering.")
+    dem = np.round(game / gen_i3d.HEIGHT_SCALE * 65535).astype(np.uint16)
+    height_at = height_sampler(game, world)
+    idx_yard = [name for name, _ in GROUND].index("gravelSmall01")
+    for s_ in sites:
+        x0, y0 = world.px(s_.e - s_.size / 2, s_.n + s_.size / 2, cfg.weight_res)
+        x1, y1 = world.px(s_.e + s_.size / 2, s_.n - s_.size / 2, cfg.weight_res)
+        labels[int(y0):int(y1), int(x0):int(x1)] = idx_yard
+    spawn_pt = Point(farm.e - 15, farm.n + 38)   # framför gårdshuset
+    trees = obj.tree_points([g for c, g in areas if c == "forest"],
+                            unary_union([cut, field_union] + [s_.box.buffer(10) for s_ in sites]), world.square(5))
 
     # i3d: fs25-empty-map:s scen, med våra marklager och fält.
     weight_files = {name: f"data/{name}_weight.png" for name, _ in GROUND}
@@ -265,7 +297,7 @@ def build(project, args):
     gen_i3d.emit_layer_block = emit_layer_block
     i3d_path = maps_dir / cfg.i3d
     local_files = gen_i3d.build(cfg, str(i3d_path))
-    add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt)
+    add_fields_to_i3d(i3d_path, fields, world, height_at, spawn_pt, trees, farm)
 
     # Data: fs25-empty-map skriver tomma lager, sedan ersätter vi med våra.
     gen_data.build(cfg, str(data_dir))
@@ -276,17 +308,21 @@ def build(project, args):
 
     N = cfg.density_res
     ground = Image.new("L", (N, N), 0)
-    farm = Image.new("L", (cfg.il_res["farmland"],) * 2, 0)
-    dg, dfarm = ImageDraw.Draw(ground), ImageDraw.Draw(farm)
+    farm_img = Image.new("L", (cfg.il_res["farmland"],) * 2, 0)
+    dg, dfarm = ImageDraw.Draw(ground), ImageDraw.Draw(farm_img)
     for geom, block, _ in fields:
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
-        draw_polygon(dfarm, geom.buffer(FIELD_SHRINK), world, farm.width, farmland_id[block])
+        draw_polygon(dfarm, geom.buffer(FIELD_SHRINK), world, farm_img.width, farmland_id[block])
+    draw_polygon(dfarm, farm.box, world, farm_img.width, 1)               # gården hör till startgården
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
-    binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), np.array(farm, dtype=np.uint8))
+    binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), np.array(farm_img, dtype=np.uint8))
 
     # Konfiguration: fs25-empty-map:s filer, sedan våra farmlands, modDesc-text och översiktskarta.
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
     write_farmlands(maps_dir / "farmlands.xml", order)
+    obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world)
+    obj.write_fields_xml(maps_dir / "fields.xml", fields)
+    obj.patch_map_xml(maps_dir / "map.xml")
     write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""))
     make_overview(maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
 
@@ -303,10 +339,11 @@ def build(project, args):
     owned_ha = sum(g.area for g in blocks[start_block]) / 10_000
     print(f"\n{title}: {len(fields)} fält i {len(order)} farmlands, terräng {base:.1f}–{real_max:.1f} m ö.h.")
     print(f"Startgård: block {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
+    print(f"Träd: {len(trees)}. Spannmålsmottagning: {'ja' if mill else 'ingen ledig plats hittades'}")
     print(f"Skrev {project.rel(zip_path)} ({zip_path.stat().st_size / 1e6:.1f} MB)")
 
 
-def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt):
+def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm):
     import xml.etree.ElementTree as ET
     tree = ET.parse(i3d_path)
     root = tree.getroot()
@@ -339,6 +376,8 @@ def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt):
                             ("missionOnlyGrass", "boolean", "false"), ("nameIndicatorIndex", "string", "1"),
                             ("polygonIndex", "string", "0"), ("teleportIndicatorIndex", "string", "1")):
             sub(fua, "Attribute", name=nm, type=ty, value=val)
+    obj.add_trees(root, trees, world, height_at, nid)
+    obj.add_store_spawn(root, farm, world, nid)
     ET.indent(root, space="  ")
     tree.write(i3d_path, encoding="iso-8859-1", xml_declaration=True)
 

@@ -47,3 +47,29 @@ GIANTS har ingen officiell kartmall eller skriven formatspecifikation för FS25.
 6. **Grödor** enligt skiftenas grödkoder.
 7. **Träd, byggnader och vägar.** Det är den svåraste delen. Där kan
    MapToPlay eller handarbete i GIANTS Editor fortfarande behövas.
+
+## Avläst från spelets egen karta Zielonka (mapEU)
+
+Läst ur spelets egna filer för att lära formatet. Inget är kopierat in i
+modden, vi refererar bara spelets objekt via `$data/…`.
+
+- **Träd** är `<ReferenceNode name=… translation="x y z" rotation="0 vridning 0"
+  referenceId=…>` i en `trees`-grupp i scenen. Filen pekar på
+  `$data/maps/trees/<art>/<art>_stageNN.i3d`, där stage01–06 är storlekar. Zielonka
+  har 9 076 träd av arterna oak, aspen, beech, downyServiceBerry och apple.
+- **Byggnader och försäljningsställen** står i `config/placeables.xml` som
+  `<placeable filename="$data/placeables/…" position=… rotation=…>`, till exempel
+  gårdsbyggnader, silor (`farma400`) och spannmålsmottagningen `grainMill`.
+  Gårdshuset har barnen `<farmhouse isFreeForAll="true"/>` och `<wardrobe …/>`.
+- **Köpta fordon** dyker upp vid `storeSpawnPlace1Start`, med barnet
+  `storeSpawnPlace1End` 40 m bort. Callback `BaseMission.onCreateStoreSpawnPlace`.
+- **Startgrödor** per fält står i `config/fields.xml`: `<field fieldId=…>` med
+  `<fruit type="WHEAT" growthState="HARVESTREADY"/>` och `<ground type="HARVEST_READY"/>`,
+  eller `<fruit type="UNKNOWN"/>` med `<ground type="PLOWED"/>`. Den refereras från
+  map.xml med `<fields filename=…/>`.
+- **Startfordon** står i `config/vehicles.xml` som `<vehicle filename="data/vehicles/…"
+  farmId="1" defaultFarmProperty="true">` med en `<component>` per fordonsdel.
+- Vägar, byggnader på orterna, stolpar och skyltar är egna 3D-objekt i kartans
+  `.i3d.shapes`. Dem kan vi inte generera på samma sätt.
+
+Det här används av `scripts/fs25_objects.py`.
