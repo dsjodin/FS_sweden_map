@@ -16,6 +16,10 @@ Resultat:
 
 Användning:
     python scripts/fetch_landcover.py [--map tysslinge] [--list]
+    python scripts/fetch_landcover.py --summarize MAPP_ELLER_FIL [--out sammanfattning.txt]
+
+Med --summarize sammanfattas valfria vektorfiler, till exempel en leverans av
+Topografi 10 Nedladdning, vektor (GeoPackage).
 """
 import argparse
 import base64
@@ -56,20 +60,23 @@ def download(href, path, user, password):
 
 
 def summarize(folder):
-    """Lager, fält och vanligaste värden i alla vektorfiler i mappen."""
-    import pyogrio  # följer med geopandas/pyogrio; installeras vid behov
+    """Lager, fält och vanligaste värden i alla vektorfiler i en mapp (eller en enskild fil)."""
+    import pyogrio  # pip install pyogrio
 
+    exts = (".gpkg", ".shp", ".geojson", ".gml")
+    paths = [folder] if folder.is_file() else sorted(p for p in folder.rglob("*") if p.suffix.lower() in exts)
     lines = []
-    for path in sorted(p for p in folder.rglob("*") if p.suffix.lower() in (".gpkg", ".shp", ".geojson", ".gml")):
+    for path in paths:
         for layer, geomtype in pyogrio.list_layers(path):
             info = pyogrio.read_info(path, layer=layer)
             lines.append(f"\n## {path.name} / {layer} ({geomtype}, {info['features']} objekt)")
             lines.append("Fält: " + ", ".join(info["fields"]))
-            df = pyogrio.read_dataframe(path, layer=layer, read_geometry=False, max_features=200_000)
-            for col in df.columns:
-                if df[col].dtype == object and df[col].nunique() <= 60:
-                    top = Counter(df[col].dropna().astype(str)).most_common(40)
-                    lines.append(f"  {col}: " + "; ".join(f"{v} ({n})" for v, n in top))
+            meta, _fids, _geom, data = pyogrio.raw.read(path, layer=layer, read_geometry=False,
+                                                         max_features=200_000)
+            for col, values in zip(meta["fields"], data):
+                counts = Counter(str(v) for v in values if v is not None)
+                if 0 < len(counts) <= 60:
+                    lines.append(f"  {col}: " + "; ".join(f"{v} ({n})" for v, n in counts.most_common(40)))
     return "\n".join(lines)
 
 
@@ -77,7 +84,18 @@ def main():
     parser = argparse.ArgumentParser()
     add_map_argument(parser)
     parser.add_argument("--list", action="store_true", help="visa vilka filer som skulle hämtas och avsluta")
+    parser.add_argument("--summarize", help="sammanfatta vektorfiler i en mapp eller fil och avsluta")
+    parser.add_argument("--out", help="skriv sammanfattningen till fil")
     args = parser.parse_args()
+    if args.summarize:
+        from pathlib import Path
+        text = summarize(Path(args.summarize).expanduser())
+        if args.out:
+            Path(args.out).write_text(text, encoding="utf-8")
+            print(f"Skrev {args.out}")
+        else:
+            print(text)
+        return 0
     project = open_map(args.map)
 
     items = search(project.bbox(project.size / 2))
