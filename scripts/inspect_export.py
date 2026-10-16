@@ -27,6 +27,9 @@ try:
 except ImportError:  # rapporten går att göra utan bildinfo
     Image = None
 
+# Spelets egna kartor ligger i installationsmappen, till exempel
+#   C:\Program Files (x86)\Steam\steamapps\common\Farming Simulator 25\data\maps\mapEU\
+
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tga", ".bmp"}
 XML_EXT = {".xml", ".i3d"}
 MAX_FULL_XML = 200  # rader; mindre XML-filer skrivs ut i sin helhet
@@ -99,6 +102,14 @@ def i3d_report(path, lines):
         by_dir = Counter(str(Path(n).parent) for n in names)
         for d, n in by_dir.most_common(25):
             lines.append(f"- `{d}/` {n}")
+        keywords = ("tree", "spruce", "pine", "birch", "oak", "placeable", "building", "house", "road",
+                    "spline", "fence", "water", "decal", "bush")
+        interesting = [n for n in names if any(k in n.lower() for k in keywords)]
+        if interesting:
+            lines.append("\nFiler om träd, byggnader, vägar och vatten (högst 120):")
+            lines += [f"- `{n}`" for n in interesting[:120]]
+            if len(interesting) > 120:
+                lines.append(f"- … och {len(interesting) - 120} till")
         local = [n for n in names if not n.startswith("$")]
         lines.append("\nLokala filer (inte från spelets $data):")
         lines += [f"- `{n}`" for n in local[:80]]
@@ -120,8 +131,20 @@ def i3d_report(path, lines):
             counts = Counter(c.tag for c in child.iter())
             lines.append(f"<{child.tag} {short_attrs(child, 4)}>  ({', '.join(f'{t}×{n}' for t, n in counts.most_common(5))})")
         lines.append("```")
+        lines.append("\n**Exempel ur varje grupp i Scene** (några barn per nivå, fyra nivåer):")
+        for child in scene:
+            if child.tag == "TerrainTransformGroup":
+                continue
+            lines.append(f"\n`{child.get('name', child.tag)}`:")
+            lines.append("```xml")
+            lines += outline(child, max_depth=4, max_children=4)
+            lines.append("```")
     user_attrs = root.find("UserAttributes")
     if user_attrs is not None:
+        callbacks = Counter(a.get("value") for a in user_attrs.iter("Attribute") if a.get("type") == "scriptCallback")
+        names = Counter(a.get("name") for a in user_attrs.iter("Attribute"))
+        lines.append("**scriptCallback i UserAttributes:** " + ", ".join(f"`{c}`×{n}" for c, n in callbacks.most_common(30)))
+        lines.append("\n**Attributnamn i UserAttributes:** " + ", ".join(f"`{c}`×{n}" for c, n in names.most_common(40)))
         lines.append(f"**UserAttributes:** {len(user_attrs)} st")
         lines.append("```xml")
         lines += outline(user_attrs, max_depth=2)
