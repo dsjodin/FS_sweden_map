@@ -125,3 +125,5 @@ pip install -r requirements.txt
 
 En färdig källförteckning till modden och villkoren för ortofoto finns i
 [docs/kallor_och_licenser.md](docs/kallor_och_licenser.md).
+Färdiga texter för ansökningar på Geotorget, och status för varje produkt,
+finns i [docs/geotorget_ansokningar.md](docs/geotorget_ansokningar.md).
