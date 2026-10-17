@@ -36,7 +36,7 @@ python scripts/pipeline.py --map vreta --only osm analys valjare
 
 # 4. Kör resten av kedjan (Lantmäteriets steg kräver LM_USER och LM_PASSWORD)
 export LM_USER=ditt-användarnamn
-read -rs LM_PASSWORD && export LM_PASSWORD
+read -rsp "Lösenord: " LM_PASSWORD && echo && export LM_PASSWORD
 python scripts/pipeline.py --map vreta --from falt
 ```
 

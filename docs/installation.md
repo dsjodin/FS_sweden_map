@@ -41,7 +41,7 @@ source .venv/bin/activate
 # Lantmäteriets steg kräver Geotorget-kontot. Läs in lösenordet utan att det
 # hamnar i skalhistoriken:
 export LM_USER=ditt-användarnamn
-read -rs LM_PASSWORD && export LM_PASSWORD
+read -rsp "Lösenord: " LM_PASSWORD && echo && export LM_PASSWORD
 
 # Hela kedjan för en karta (se README för en ny karta):
 python scripts/pipeline.py --map tysslinge
