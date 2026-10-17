@@ -15,7 +15,7 @@ Resultat:
     data/<namn>/lm/vektor/sammanfattning.txt    lager, fält och klasser
 
 Användning:
-    python scripts/fetch_landcover.py [--map tysslinge] [--list]
+    python scripts/fetch_landcover.py [--map tysslinge] [--list] [--produkt marktacke]
     python scripts/fetch_landcover.py --summarize MAPP_ELLER_FIL [--out sammanfattning.txt]
 
 Med --summarize sammanfattas valfria vektorfiler, till exempel en leverans av
@@ -40,12 +40,12 @@ COLLECTIONS = ("marktacke", "byggnader")
 to_wgs = Transformer.from_crs("EPSG:3006", "EPSG:4326", always_xy=True).transform
 
 
-def search(bbox):
+def search(bbox, collections=COLLECTIONS):
     min_e, min_n, max_e, max_n = bbox
     lon0, lat0 = to_wgs(min_e, min_n)
     lon1, lat1 = to_wgs(max_e, max_n)
     url = STAC_SEARCH + "?" + urllib.parse.urlencode({
-        "collections": ",".join(COLLECTIONS), "bbox": f"{lon0},{lat0},{lon1},{lat1}", "limit": 50})
+        "collections": ",".join(collections), "bbox": f"{lon0},{lat0},{lon1},{lat1}", "limit": 50})
     with urllib.request.urlopen(url, timeout=60) as resp:
         return [(f["collection"], f["id"], f["assets"]["data"]["href"]) for f in json.load(resp)["features"]]
 
@@ -84,6 +84,8 @@ def main():
     parser = argparse.ArgumentParser()
     add_map_argument(parser)
     parser.add_argument("--list", action="store_true", help="visa vilka filer som skulle hämtas och avsluta")
+    parser.add_argument("--produkt", nargs="+", choices=COLLECTIONS, default=list(COLLECTIONS),
+                        help="hämta bara dessa produkter (standard: alla)")
     parser.add_argument("--summarize", help="sammanfatta vektorfiler i en mapp eller fil och avsluta")
     parser.add_argument("--out", help="skriv sammanfattningen till fil")
     args = parser.parse_args()
@@ -98,7 +100,7 @@ def main():
         return 0
     project = open_map(args.map)
 
-    items = search(project.bbox(project.size / 2))
+    items = search(project.bbox(project.size / 2), args.produkt)
     print(f"{len(items)} filer: " + ", ".join(f"{c} kommun {i}" for c, i, _ in items))
     if args.list:
         return 0
@@ -109,15 +111,23 @@ def main():
 
     out_dir = project.lm / "vektor"
     out_dir.mkdir(parents=True, exist_ok=True)
+    denied = set()
     for coll, item_id, href in items:
         target = out_dir / f"{coll}_{item_id}"
         zpath = out_dir / f"{coll}_{item_id}.zip"
+        if coll in denied:
+            continue
         if not target.exists():
             print(f"Hämtar {coll} för kommun {item_id} ...")
             try:
                 download(href, zpath, user, password)
             except urllib.error.HTTPError as exc:
-                print(f"  {exc}. Har kontot behörighet till {coll}?", file=sys.stderr)
+                if exc.code in (401, 403):
+                    print(f"  {exc}. Kontot har inte behörighet till {coll} än, hoppar över.", file=sys.stderr)
+                    denied.add(coll)
+                    zpath.unlink(missing_ok=True)
+                    continue
+                print(f"  {exc}", file=sys.stderr)
                 return 1
             with zipfile.ZipFile(zpath) as z:
                 z.extractall(target)
