@@ -6,8 +6,8 @@ verkligheten som möjligt.
 
 Datakällorna täcker hela Sverige:
 
-- **Lantmäteriet:** höjdmodell med 1 m upplösning, ortofoto (kräver
-  Geotorget-konto).
+- **Lantmäteriet:** höjdmodell med 1 m upplösning, Marktäcke (skog, vatten,
+  bebyggelse, öppen mark), ortofoto (kräver Geotorget-konto).
 - **Jordbruksverket:** jordbruksblock och skiften med grödor. De verkliga
   fälten, utan inloggning.
 - **OpenStreetMap:** vägar, byggnader, skog, vatten och ortnamn.

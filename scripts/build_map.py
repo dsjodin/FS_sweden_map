@@ -9,9 +9,12 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
   åkerjord i densityMap_ground
 - farmlands = jordbruksblock: varje block som har fält blir ett köpbart
   markområde. Blocket närmast startpunkten ägs från start.
-- marktexturer från OSM: asfalt, grus, skogsmark, åkerjord och gräs
+- marktyper från Lantmäteriets Marktäcke (skog, vatten, bebyggelse, öppen
+  mark) om den är hämtad med fetch_landcover.py, annars från OSM. Vägar och
+  gårdsplaner kommer från OSM.
+- marktexturer: asfalt, grus, skogsmark, åkerjord och gräs
 - översiktskarta (PDA) ritad från samma data
-- träd i OSM:s skogar, startgård med gårdshus, maskinhall och silo, en
+- träd i skogarna, startgård med gårdshus, maskinhall och silo, en
   spannmålsmottagning och plats för köpta fordon (scripts/fs25_objects.py)
 - fältens grödor vid nytt spel från skiftenas grödkoder (maps/fields.xml)
 
@@ -49,6 +52,7 @@ import gen_i3d  # noqa: E402
 import mapcfg  # noqa: E402
 from analyze_area import load_features  # noqa: E402
 import fs25_objects as obj  # noqa: E402
+import landcover  # noqa: E402
 
 # Marklager (namn i spelets standarduppsättning) i prioritetsordning: senare vinner.
 GROUND = [
@@ -145,10 +149,10 @@ def height_sampler(game, world):
     return height_at
 
 
-def obstacles(roads, waterways, world):
-    """Vägar och vattendrag som buffrade ytor, att skära bort ur fälten."""
+def obstacles(roads, waterways, world, areas=()):
+    """Vägar, vattendrag och vattenytor som buffrade ytor, att skära bort ur fälten."""
     sq = world.square(-50)
-    parts = []
+    parts = [g.buffer(ROAD_MARGIN) for cls, g in areas if cls == "water" and g.intersects(sq)]
     for cls, line in roads:
         if line.intersects(sq):
             parts.append(line.buffer(ROAD_STYLE[cls][1] / 2 + ROAD_MARGIN, cap_style="flat"))
@@ -224,10 +228,10 @@ def build(project, args):
     print("Höjdkarta ...")
     game, base, real_max = make_dem(project, world, args.floor)
     print("Fält och marklager ...")
-    osm = load_features(project.raw / "osm.json")
-    fields = load_fields(project, world, obstacles(osm[1], osm[2], world))
+    osm, sources = load_land(project, world)
+    cut = obstacles(osm[1], osm[2], world, osm[0])
+    fields = load_fields(project, world, cut)
     labels = ground_labels(osm, world, fields, cfg.weight_res)
-    cut = obstacles(osm[1], osm[2], world)
 
     # Farmlands: ett per jordbruksblock med fält. Startgården = blocket närmast startpunkten.
     start = cfg_map.get("start") or cfg_map["center"]
@@ -323,7 +327,7 @@ def build(project, args):
     obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world)
     obj.write_fields_xml(maps_dir / "fields.xml", fields)
     obj.patch_map_xml(maps_dir / "map.xml")
-    write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""))
+    write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""), sources)
     make_overview(maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
 
     missing = [f for f in local_files if not (maps_dir / f).exists()]
@@ -341,6 +345,24 @@ def build(project, args):
     print(f"Startgård: block {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
     print(f"Träd: {len(trees)}. Spannmålsmottagning: {'ja' if mill else 'ingen ledig plats hittades'}")
     print(f"Skrev {project.rel(zip_path)} ({zip_path.stat().st_size / 1e6:.1f} MB)")
+
+
+def load_land(project, world):
+    """OSM-data där marktäcket byts mot Lantmäteriets Marktäcke när det finns.
+    Returnerar (osm-tupeln från load_features, källrader till modDesc)."""
+    osm = load_features(project.raw / "osm.json")
+    if not landcover.marktacke_files(project):
+        print("  Marktyper från OSM (Marktäcke saknas, se fetch_landcover.py)")
+        return osm, ["Vägar, skog och vatten: © OpenStreetMap-bidragsgivare, ODbL."]
+    lm = landcover.load_marktacke(project, world.square(-200))
+    counts = {}
+    for cls, _ in lm:
+        counts[cls] = counts.get(cls, 0) + 1
+    print("  Marktyper från Lantmäteriets Marktäcke: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+    areas = [a for a in osm[0] if a[0] not in landcover.REPLACES] + lm
+    return (areas,) + tuple(osm[1:]), [
+        "Marktyper: Marktäcke Nedladdning, vektor, © Lantmäteriet, bearbetad, CC BY 4.0.",
+        "Vägar och gårdsplaner: © OpenStreetMap-bidragsgivare, ODbL."]
 
 
 def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm):
@@ -391,7 +413,7 @@ def write_farmlands(path, order):
         + "\n".join(rows) + "\n    </farmlands>\n</map>\n", encoding="utf-8")
 
 
-def write_moddesc_description(path, title, description):
+def write_moddesc_description(path, title, description, sources):
     import html
     description = description.strip()
     if description and not description.endswith("."):
@@ -399,8 +421,7 @@ def write_moddesc_description(path, title, description):
     text = (f"{title}: verklig svensk landsbygd. {description} "
             "Höjddata: Markhöjdmodell Nedladdning, grid 1+, © Lantmäteriet, bearbetad, CC BY 4.0. "
             "Fält: jordbruksskiften, © Jordbruksverket, bearbetad. "
-            "Vägar och skog: © OpenStreetMap-bidragsgivare, ODbL. "
-            "Kartgrund: fs25-empty-map (MIT).")
+            + " ".join(sources) + " Kartgrund: fs25-empty-map (MIT).")
     s = path.read_text(encoding="utf-8")
     start, end = s.index("<description>"), s.index("</description>") + len("</description>")
     s = s[:start] + f"<description><en>{html.escape(text)}</en></description>" + s[end:]
