@@ -350,7 +350,11 @@ def build(project, args):
 def load_land(project, world):
     """OSM-data där marktäcket byts mot Lantmäteriets Marktäcke när det finns.
     Returnerar (osm-tupeln från load_features, källrader till modDesc)."""
-    osm = load_features(project.raw / "osm.json")
+    osm_path = project.raw / "osm.json"
+    if not osm_path.exists():
+        sys.exit(f"Hittar inte {project.rel(osm_path)}. Kör fetch_osm.py först "
+                 f"(python scripts/pipeline.py --map {project.name} --only osm falt).")
+    osm = load_features(osm_path)
     if not landcover.marktacke_files(project):
         print("  Marktyper från OSM (Marktäcke saknas, se fetch_landcover.py)")
         return osm, ["Vägar, skog och vatten: © OpenStreetMap-bidragsgivare, ODbL."]
