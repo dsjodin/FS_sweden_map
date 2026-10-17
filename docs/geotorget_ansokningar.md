@@ -13,11 +13,19 @@ datan.
 | Markhöjdmodell Nedladdning (grid 1+) | Terräng | Ingen ansökan om personuppgifter | Beviljad, används |
 | Ortofoto Nedladdning | Förlaga, översiktskarta | Texter under [Ortofoto](#ortofoto-nedladdning) | Ansökt |
 | Topografi 10 Nedladdning, vektor | Vattendrag, marktyper, vägar, byggnader | Texter under [Topografi 10](#topografi-10-nedladdning-vektor) | Ansökt |
-| Marktäcke Nedladdning, vektor | Skog, åker, sankmark, vatten | Mallen nedan | Beställd. Täcks troligen av Topografi 10 |
-| Byggnad Nedladdning, vektor | Byggnader | Mallen nedan | Beställd. Täcks troligen av Topografi 10 |
+| Marktäcke Nedladdning, vektor | Skog, åker, sankmark, vatten | Texter under [Marktäcke](#marktäcke-nedladdning-vektor) | Att beställa |
+| Byggnad Nedladdning, vektor | Byggnader och deras ändamål | Texter under [Byggnad](#byggnad-nedladdning-vektor) | Att beställa |
 | Hydrografi Nedladdning | Vattendrag | Går inte att få | Avslagen: bara för myndigheter, tillståndsärenden och forskning |
 
 Uppdatera tabellen när en ansökan beviljas.
+
+Topografi 10 och Marktäcke/Byggnad överlappar, men de levereras olika.
+Topografi 10 är ett engångsuttag av hela Sverige. Marktäcke och Byggnad
+hämtas per kommun via Lantmäteriets API, och `fetch_landcover.py` hämtar dem
+automatiskt för varje ny karta, alltid i senaste versionen. Byggnad har
+dessutom byggnadens ändamål (bostad, ekonomibyggnad med flera), som behövs
+för att välja rätt sorts byggnad i spelet. Därför beställs alla tre.
+
 
 ## Fält som är lika för alla produkter
 
@@ -74,6 +82,26 @@ Beställning: engångsuttag, SWEREF 99 TM, GeoPackage, urval Sverige. Avgift 0 k
 
 **Om informationen kommer att spridas** (462 av 900 tecken):
 > Själva datan sprids inte. Den lagras bara på mina egna datorer i Sverige och laddas inte upp till molntjänster. Om en färdig kartmodd publiceras, till exempel gratis på spelets moddsidor, innehåller den bara spelgrafik och förenklade former som jag skapat utifrån datan, till exempel var skog, vattendrag och vägar finns. Inga attribut som namn på byggnader, ägare eller adresser följer med. Källan anges som "Topografi 10, © Lantmäteriet, bearbetad, CC BY 4.0".
+
+## Marktäcke Nedladdning, vektor
+
+Beställning: SWEREF 99 TM, urval Sverige. Avgift 0 kr. Hämtas med `fetch_landcover.py` när behörigheten är klar.
+
+**Hur informationen kommer att användas** (784 av 900 tecken):
+> Datan ska användas som underlag när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd i olika delar av landet. Den första kartan gäller Tysslinge i Örebro kommun, och fler kartor ska göras på andra platser. Jag använder marktyperna (skog, åker, sankmark, vatten, bebyggelse) för att lägga rätt marktextur och placera skog och vatten på rätt ställen i spelet. För varje karta används bara ett begränsat område på cirka 8×8 km. Datan bearbetas på mina egna datorer och används bara av mig. Jag använder inga uppgifter om ägare eller adresser och gör ingen analys av personer eller fastigheter. Eventuella personuppgifter i datan behandlas inte särskilt. Behandlingen sker för privat bruk, i en hobby utan kommersiellt syfte.
+
+**Om informationen kommer att spridas** (504 av 900 tecken):
+> Själva datan och eventuella personuppgifter i den sprids inte. Datan lagras bara på mina egna datorer i Sverige och laddas inte upp till molntjänster. Om en färdig kartmodd publiceras, till exempel gratis på spelets moddsidor, innehåller den bara spelgrafik och förenklade former som jag skapat utifrån datan, till exempel var skog, åker och vatten finns. Inga uppgifter om personer, ägare eller adresser följer med. Källan anges som "Marktäcke Nedladdning, vektor, © Lantmäteriet, bearbetad, CC BY 4.0".
+
+## Byggnad Nedladdning, vektor
+
+Beställning: SWEREF 99 TM, urval Sverige. Avgift 0 kr. Hämtas med `fetch_landcover.py` när behörigheten är klar.
+
+**Hur informationen kommer att användas** (788 av 900 tecken):
+> Datan ska användas som underlag när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd i olika delar av landet. Den första kartan gäller Tysslinge i Örebro kommun, och fler kartor ska göras på andra platser. Jag använder byggnadernas läge, form och ändamål (till exempel bostad eller ekonomibyggnad) för att placera passande byggnader från spelet på rätt ställen. För varje karta används bara ett begränsat område på cirka 8×8 km. Datan bearbetas på mina egna datorer och används bara av mig. Jag använder inga uppgifter om ägare eller adresser och gör ingen analys av personer eller fastigheter. Eventuella personuppgifter i datan behandlas inte särskilt. Behandlingen sker för privat bruk, i en hobby utan kommersiellt syfte.
+
+**Om informationen kommer att spridas** (503 av 900 tecken):
+> Själva datan och eventuella personuppgifter i den sprids inte. Datan lagras bara på mina egna datorer i Sverige och laddas inte upp till molntjänster. Om en färdig kartmodd publiceras, till exempel gratis på spelets moddsidor, innehåller den bara spelgrafik och förenklade former som jag skapat utifrån datan, till exempel var det finns hus och ladugårdar. Inga uppgifter om personer, ägare eller adresser följer med. Källan anges som "Byggnad Nedladdning, vektor, © Lantmäteriet, bearbetad, CC BY 4.0".
 
 ## Ortofoto Nedladdning
 
