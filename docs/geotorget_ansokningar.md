@@ -59,10 +59,13 @@ Beställning: engångsuttag, SWEREF 99 TM, GeoPackage, urval Sverige. Avgift 0 k
 
 ## Ortofoto Nedladdning
 
-**Hur informationen kommer att användas:**
-> Ortofotona ska användas som förlaga när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd. Den första kartan gäller området kring Tysslinge i Örebro kommun. Bilderna används för att se var åkerkanter, diken, vägar, gårdar och träd ligger, så att kartorna blir verklighetstrogna. För varje karta hämtas bara ett begränsat område på cirka 8×8 km. Bilderna skalas ned till 0,5 m upplösning och bearbetas på mina egna datorer. Jag gör ingen sammanställning eller analys av personer, fastigheter eller fordon. Eventuella personuppgifter i bilderna, till exempel synliga personer eller fordon, är inte av intresse och behandlas inte särskilt. Projektet är en privat hobby utan kommersiellt syfte.
+Klistra in **en** text per fält. Geografiskt område: samma text som under
+"Fält som är lika för alla produkter".
 
-**Om informationen kommer att spridas:**
+**Hur informationen kommer att användas** (716 av 900 tecken):
+> Ortofotona ska användas som förlaga när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd i olika delar av landet. Den första kartan gäller Tysslinge i Örebro kommun, och fler kartor ska göras på andra platser. Bilderna används för att se var åkerkanter, diken, vägar, gårdar och träd ligger, så att kartorna blir verklighetstrogna. För varje karta hämtas bara ett begränsat område på cirka 8×8 km, som skalas ned till 0,5 m upplösning. Bilderna bearbetas på mina egna datorer. Jag gör ingen analys av personer, fastigheter eller fordon. Eventuella personuppgifter i bilderna behandlas inte särskilt. Projektet är en privat hobby utan kommersiellt syfte.
+
+**Om informationen kommer att spridas** (538 av 900 tecken):
 > Själva ortofotona sprids inte. De lagras bara på mina egna datorer i Sverige och laddas inte upp till molntjänster. Om en färdig kartmodd publiceras, till exempel gratis på spelets moddsidor, innehåller den inga ortofoton. Den innehåller bara spelgrafik som jag själv har skapat med bilderna som förlaga. Om en översiktskarta i spelet baseras på bilderna görs den i låg upplösning, 2 m per pixel eller grövre, så att personer och fordon inte går att urskilja. Källan anges som "Ortofoto Nedladdning, © Lantmäteriet, bearbetad, CC BY 4.0".
 
 ## Det här lovar ansökningarna, och skripten följer det
