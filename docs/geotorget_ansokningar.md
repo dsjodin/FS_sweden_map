@@ -97,6 +97,9 @@ andra län, så att texten stämmer med uttaget:
 
 ## Marktäcke Nedladdning, vektor
 
+Villkor: Användningsvillkor för värdefulla datamängder, utan personuppgifter.
+Texterna nedan behövs bara om formuläret ändå frågar efter motivering.
+
 Beställning: SWEREF 99 TM, urval Sverige. Avgift 0 kr. Hämtas med `fetch_landcover.py` när behörigheten är klar.
 
 **Hur informationen kommer att användas** (784 av 900 tecken):
