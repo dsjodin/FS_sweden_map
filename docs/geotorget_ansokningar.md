@@ -85,6 +85,10 @@ användas till i spelet. Håll texten under 900 tecken.
 Beställning: engångsuttag, SWEREF 99 TM, GeoPackage. Urval: några få län där
 kartor är aktuella, alltid Örebro län för Tysslinge. Avgift 0 kr.
 
+**Geografiskt område** (169 av 200 tecken). Ändra listan om du väljer
+andra län, så att texten stämmer med uttaget:
+> Örebro, Östergötlands, Västra Götalands och Skåne län. Kartor görs för landsbygdsområden om cirka 8×8 km per karta inom dessa län, med början i Tysslinge, Örebro kommun.
+
 **Hur informationen kommer att användas** (732 av 900 tecken):
 > Datan ska användas som underlag när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd i olika delar av landet. Den första kartan gäller Tysslinge i Örebro kommun, och fler kartor ska göras på andra platser. Jag använder vattendrag, marktyper (skog, åker, sankmark, vatten), vägar och byggnadernas läge och form för att placera dessa rätt i spelet. För varje karta används bara ett begränsat område på cirka 8×8 km. Datan bearbetas på mina egna datorer. Jag använder inga uppgifter om ägare eller adresser och gör ingen analys av personer eller fastigheter. Eventuella personuppgifter i datan behandlas inte särskilt. Projektet är en privat hobby utan kommersiellt syfte.
 
