@@ -20,6 +20,22 @@ Texten nedan ska följa med den publicerade modden, till exempel i
 Raden om ortofoto tas bara med om ortofotot faktiskt har använts.
 Kontrollera Jordbruksverkets licens för blockdatabasen innan publicering.
 
+## Varför Lantmäteriets data är avgiftsfri
+
+Lantmäteriets produkter för kartorna (höjd, ortofoto, Topografi 10,
+Marktäcke, Byggnad) räknas som värdefulla datamängder. Lantmäteriet skriver
+på [Om tillhandahållandet](https://www.lantmateriet.se/sv/geotorget-produktstod/om-tillhandahallandet/):
+"Värdefulla datamängder ska vara avgiftsfria, tillgängliga för
+vidareutnyttjande enligt CCBY 4.0 eller lägre".
+
+Kravet kommer från EU:s öppna data-direktiv (2019/1024, artikel 14.1). Vilka
+datamängder som omfattas står i genomförandeförordning (EU) 2023/138. I
+Sverige gäller öppna data-lagen (2022:818), 4 kap. 4 §. Lantmäteriets
+övergångsundantag från avgiftsfriheten upphörde den 9 februari 2025.
+
+Data som redan har hämtats under CC BY 4.0 får användas vidare även om
+villkoren ändras senare. Spara därför datumet för varje uttag.
+
 ## Villkor för Lantmäteriets ortofoto
 
 Ortofoto Nedladdning innehåller personuppgifter och omfattas av
