@@ -91,7 +91,8 @@ Ungefär i den här ordningen:
 - Startgård med maskinhall och spannmålssilo.
 - Spannmålsmottagning och försäljningsställen. Kan vara fiktiva eller
   inspirerade av verkliga platser i närheten.
-- PDA-kartan (översiktskartan) från ortofoto eller masker.
+- PDA-kartan (översiktskartan) från kartdatan. Aldrig från ortofoto, eftersom
+  ortofoton inte får spridas.
 - Trafik och fotgängare längs vägarna (AI-splines).
 
 ## Fas 7: Test och paketering

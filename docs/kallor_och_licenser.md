@@ -30,10 +30,10 @@ personuppgifter" (dnr LM2025/009269, version 1.1). Det innebär:
   som förlaga till den här kartan.
 - Bara det område som behövs hämtas: 8×8 km kring kartans mittpunkt.
   `fetch_orthophoto.py` hämtar exakt det området.
-- Bilderna lagras och bearbetas bara inom EU/EES, på egen dator och server.
+- Bilderna lagras och bearbetas bara på egna datorer i Sverige.
   **De laddas inte upp till MapToPlay eller andra molntjänster.**
-- Originalbilderna sprids inte. Om en översiktskarta i spelet görs från
-  bilderna görs den i låg upplösning (2 m per pixel eller grövre).
+- Bilderna sprids inte, varken hela eller som utsnitt. Modden innehåller
+  inga ortofoton, inte heller i översiktskartan.
 - Lantmäteriet kan göra stickprovskontroller.
 
 Höjdmodellen innehåller inga personuppgifter men kräver samma källangivelse

@@ -36,6 +36,24 @@ hur datan används är du personuppgiftsansvarig.
 Välj **Sverige** som geografiskt urval i beställningen, så att det stämmer med
 texten.
 
+## Personuppgiftsansvar och undantaget för privat bruk
+
+GDPR gäller inte när en privatperson behandlar personuppgifter för privat
+bruk utan att sprida dem (artikel 2.2 c). Lantmäteriet prövar om det
+undantaget gäller utifrån motiveringen. Texterna är skrivna för att det ska
+gå att bedöma:
+
+- **Privat bruk:** en hobby utan kommersiellt syfte. Datan används bara av
+  mig, på mina egna datorer hemma.
+- **Ingen spridning av personuppgifter:** varken datan eller utsnitt ur den
+  sprids. En publicerad modd innehåller bara egen spelgrafik, utan personer,
+  fordon, namn, ägare eller adresser.
+
+Det som skulle kunna tolkas som spridning är modden. Därför får modden aldrig
+innehålla bilder eller utsnitt ur ortofoton, inte heller som översiktskarta.
+`build_map.py` ritar översiktskartan från kartans egna marktyper, vägar och
+byggnader, och den ska fortsätta göra det.
+
 ## Mall för nya produkter
 
 Byt `[DATA]` mot vad produkten innehåller och `[ANVÄNDNING]` mot vad den ska
@@ -62,11 +80,11 @@ Beställning: engångsuttag, SWEREF 99 TM, GeoPackage, urval Sverige. Avgift 0 k
 Klistra in **en** text per fält. Geografiskt område: samma text som under
 "Fält som är lika för alla produkter".
 
-**Hur informationen kommer att användas** (716 av 900 tecken):
-> Ortofotona ska användas som förlaga när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd i olika delar av landet. Den första kartan gäller Tysslinge i Örebro kommun, och fler kartor ska göras på andra platser. Bilderna används för att se var åkerkanter, diken, vägar, gårdar och träd ligger, så att kartorna blir verklighetstrogna. För varje karta hämtas bara ett begränsat område på cirka 8×8 km, som skalas ned till 0,5 m upplösning. Bilderna bearbetas på mina egna datorer. Jag gör ingen analys av personer, fastigheter eller fordon. Eventuella personuppgifter i bilderna behandlas inte särskilt. Projektet är en privat hobby utan kommersiellt syfte.
+**Hur informationen kommer att användas** (757 av 900 tecken):
+> Ortofotona ska användas som förlaga när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd i olika delar av landet. Den första kartan gäller Tysslinge i Örebro kommun, och fler kartor ska göras på andra platser. Bilderna används för att se var åkerkanter, diken, vägar, gårdar och träd ligger, så att kartorna blir verklighetstrogna. För varje karta hämtas bara ett begränsat område på cirka 8×8 km, som skalas ned till 0,5 m upplösning. Bilderna bearbetas på mina egna datorer och används bara av mig. Jag gör ingen analys av personer, fastigheter eller fordon. Eventuella personuppgifter i bilderna behandlas inte särskilt. Behandlingen sker för privat bruk, i en hobby utan kommersiellt syfte.
 
-**Om informationen kommer att spridas** (538 av 900 tecken):
-> Själva ortofotona sprids inte. De lagras bara på mina egna datorer i Sverige och laddas inte upp till molntjänster. Om en färdig kartmodd publiceras, till exempel gratis på spelets moddsidor, innehåller den inga ortofoton. Den innehåller bara spelgrafik som jag själv har skapat med bilderna som förlaga. Om en översiktskarta i spelet baseras på bilderna görs den i låg upplösning, 2 m per pixel eller grövre, så att personer och fordon inte går att urskilja. Källan anges som "Ortofoto Nedladdning, © Lantmäteriet, bearbetad, CC BY 4.0".
+**Om informationen kommer att spridas** (575 av 900 tecken):
+> Ortofotona och eventuella personuppgifter i dem sprids inte. Bilderna lagras bara på mina egna datorer i Sverige och laddas inte upp till molntjänster. Om en färdig kartmodd publiceras, till exempel gratis på spelets moddsidor, innehåller den inga ortofoton och inga utsnitt ur dem, inte heller i översiktskartan. Den innehåller bara spelgrafik som jag själv har skapat med bilderna som förlaga, till exempel var åkrar, vägar och skog finns. Inga personer, fordon, namn eller adresser följer med. Källan anges som "Ortofoto Nedladdning, © Lantmäteriet, bearbetad, CC BY 4.0".
 
 ## Det här lovar ansökningarna, och skripten följer det
 
@@ -80,6 +98,8 @@ användningsvillkor (se [kallor_och_licenser.md](kallor_och_licenser.md)):
   till MapToPlay eller andra molntjänster.**
 - Inga uppgifter om ägare, adresser eller personer används eller följer med
   i modden.
+- Modden innehåller inga ortofoton eller utsnitt ur dem. Översiktskartan
+  ritas från kartdatan, inte från ortofoton.
 - Källan anges i modden (`modDesc.xml`) med produktnamn, © Lantmäteriet,
   bearbetad och CC BY 4.0.
 - Lantmäteriet kan göra stickprov. Avviker användningen från ansökan kan
