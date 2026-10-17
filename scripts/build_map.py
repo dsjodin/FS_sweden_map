@@ -13,7 +13,8 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
   mark) om den är hämtad med fetch_landcover.py, annars från OSM. Vägar och
   gårdsplaner kommer från OSM.
 - marktexturer: asfalt, grus, skogsmark, åkerjord och gräs
-- översiktskarta (PDA) ritad från samma data
+- översiktskarta (PDA) ritad från samma data. Spelet visar den över dubbla
+  kartytan, så den täcker också omgivningen runt kartan.
 - träd i skogarna, startgård med gårdshus, maskinhall och silo, en
   spannmålsmottagning och plats för köpta fordon (scripts/fs25_objects.py)
 - fältens grödor vid nytt spel från skiftenas grödkoder (maps/fields.xml)
@@ -28,6 +29,7 @@ Användning:
     python scripts/build_map.py [--map tysslinge] [--floor 10]
 """
 import argparse
+import copy
 import json
 import sys
 import zipfile
@@ -98,6 +100,12 @@ class World:
         """SWEREF -> pixel (kolumn, rad) i en bild med res pixlar över hela kartan."""
         s = res / self.size
         return (e - self.e0 + self.half) * s, (self.n0 - n + self.half) * s
+
+    def scaled(self, factor):
+        """Samma mittpunkt men factor gånger så stor yta (för översiktskartan)."""
+        big = copy.copy(self)
+        big.size, big.half = self.size * factor, self.half * factor
+        return big
 
     def square(self, inset=0.0):
         h = self.half - inset
@@ -185,6 +193,21 @@ def load_fields(project, world, cut):
                 fields.append((part, str(p.get("blockid")), p.get("grdkod_mar")))
     fields.sort(key=lambda t: (-t[0].centroid.y, t[0].centroid.x))  # nummer från nordväst, rad för rad
     return fields
+
+
+def surrounding_fields(project, world):
+    """Alla skiften inom world (även utanför kartan), som (polygon, None, None) för översiktskartan."""
+    sq = world.square()
+    out = []
+    for f in json.loads((project.raw / "jbv_skiften.geojson").read_text(encoding="utf-8"))["features"]:
+        if f["properties"].get("grdkod_mar") in MEADOW_CODES:
+            continue
+        geom = shape(f["geometry"]).buffer(0).buffer(-FIELD_SHRINK, join_style="mitre")
+        if geom.intersects(sq):
+            for part in ([geom] if geom.geom_type == "Polygon" else getattr(geom, "geoms", [])):
+                if part.geom_type == "Polygon":
+                    out.append((part, None, None))
+    return out
 
 
 def ground_labels(osm, world, fields, res):
@@ -328,7 +351,7 @@ def build(project, args):
     obj.write_fields_xml(maps_dir / "fields.xml", fields)
     obj.patch_map_xml(maps_dir / "map.xml")
     write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""), sources)
-    make_overview(maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
+    make_overview(project, maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
 
     missing = [f for f in local_files if not (maps_dir / f).exists()]
     if missing:
@@ -358,7 +381,7 @@ def load_land(project, world):
     if not landcover.marktacke_files(project):
         print("  Marktyper från OSM (Marktäcke saknas, se fetch_landcover.py)")
         return osm, ["Vägar, skog och vatten: © OpenStreetMap-bidragsgivare, ODbL."]
-    lm = landcover.load_marktacke(project, world.square(-200))
+    lm = landcover.load_marktacke(project, world.scaled(2).square())   # dubbel yta för översiktskartan
     counts = {}
     for cls, _ in lm:
         counts[cls] = counts.get(cls, 0) + 1
@@ -433,10 +456,16 @@ def write_moddesc_description(path, title, description, sources):
     path.write_text(s, encoding="utf-8")
 
 
-def make_overview(path, labels, osm, world, res):
+def make_overview(project, path, labels, osm, world, res):
+    """Översiktskartan. Spelet lägger bilden över dubbla kartytan med kartan i mitten,
+    så omgivningen ritas från skiften, marktyper och vägar utanför kartan."""
     palette = np.array([OVERVIEW_COLORS[name] for name, _ in GROUND], dtype=np.uint8)
-    img = Image.fromarray(palette[labels]).resize((res, res), Image.NEAREST)
+    big = world.scaled(2)
+    img = Image.fromarray(palette[ground_labels(osm, big, surrounding_fields(project, big), res)])
+    inner = Image.fromarray(palette[labels]).resize((res // 2, res // 2), Image.NEAREST)
+    img.paste(inner, (res // 4, res // 4))
     d = ImageDraw.Draw(img)
+    world = big
     areas, _roads, waterways, _rail, buildings, _places = osm
     for cls, geom in areas:
         if cls == "water":
