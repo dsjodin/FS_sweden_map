@@ -82,8 +82,11 @@ def main():
     if skipped:
         print(f"Hoppade över: {', '.join(skipped)}. Lantmäteriets steg kräver LM_USER och LM_PASSWORD.")
     mod = project.config.get("mod_name", "FS25_" + project.name.capitalize())
-    print(f"Färdig modd: build/{project.name}/{mod}.zip")
-    print(f"Till MapToPlay: data/{project.name}/lm/hojd/dtm_total.tif och build/{project.name}/{project.name}_faltskiften.osm")
+    for label, path in (("Färdig modd", project.build / f"{mod}.zip"),
+                        ("Till MapToPlay", project.lm / "hojd" / "dtm_total.tif"),
+                        ("Till MapToPlay", project.build / f"{project.name}_faltskiften.osm")):
+        if path.exists():
+            print(f"{label}: {project.rel(path)}")
     return 0
 
 
