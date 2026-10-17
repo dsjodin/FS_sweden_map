@@ -41,8 +41,15 @@ hur datan används är du personuppgiftsansvarig.
 **Geografiskt område** (128 av 200 tecken):
 > Hela Sverige. Kartor görs för valfria landsbygdsområden i landet, cirka 8×8 km per karta, med början i Tysslinge, Örebro kommun.
 
-Välj **Sverige** som geografiskt urval i beställningen, så att det stämmer med
-texten.
+Texten beskriver vad behörigheten ska gälla. Själva uttaget kan vara mindre:
+
+- **Produkter som hämtas via API** (Marktäcke, Byggnad, Ortofoto,
+  Markhöjdmodell): välj urval **Sverige**. Skripten hämtar ändå bara de
+  rutor eller kommuner som kartan berör.
+- **Produkter som levereras som fil** (Topografi 10): välj bara de kommuner
+  eller det län som kartan ligger i. Det blir en mindre fil och stämmer med
+  löftet att bara använda det område som behövs. Beställ ett nytt uttag när
+  en karta görs någon annanstans.
 
 ## Personuppgiftsansvar och undantaget för privat bruk
 
@@ -75,7 +82,8 @@ användas till i spelet. Håll texten under 900 tecken.
 
 ## Topografi 10 Nedladdning, vektor
 
-Beställning: engångsuttag, SWEREF 99 TM, GeoPackage, urval Sverige. Avgift 0 kr.
+Beställning: engångsuttag, SWEREF 99 TM, GeoPackage. Urval: kommunerna som kartan berör, för Tysslinge
+Örebro och Lekeberg (eller Örebro län om kommuner inte går att välja). Avgift 0 kr.
 
 **Hur informationen kommer att användas** (732 av 900 tecken):
 > Datan ska användas som underlag när jag bygger egna kartor (moddar) till datorspelet Farming Simulator 25 över verkliga platser på svensk landsbygd i olika delar av landet. Den första kartan gäller Tysslinge i Örebro kommun, och fler kartor ska göras på andra platser. Jag använder vattendrag, marktyper (skog, åker, sankmark, vatten), vägar och byggnadernas läge och form för att placera dessa rätt i spelet. För varje karta används bara ett begränsat område på cirka 8×8 km. Datan bearbetas på mina egna datorer. Jag använder inga uppgifter om ägare eller adresser och gör ingen analys av personer eller fastigheter. Eventuella personuppgifter i datan behandlas inte särskilt. Projektet är en privat hobby utan kommersiellt syfte.
