@@ -137,7 +137,7 @@ def main():
     try:
         text = summarize(out_dir)
     except ImportError:
-        print("Installera pyogrio för sammanfattningen: pip install pyogrio pandas", file=sys.stderr)
+        print("Installera pyogrio för sammanfattningen: pip install -r requirements.txt", file=sys.stderr)
         return 1
     (out_dir / "sammanfattning.txt").write_text(text, encoding="utf-8")
     print(f"\nSkrev {project.rel(out_dir / 'sammanfattning.txt')}")
