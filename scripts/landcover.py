@@ -45,7 +45,7 @@ def load_marktacke(project, area):
             if cls is None or geom is None or oid in seen:   # samma yta kan finnas i två kommuners filer
                 continue
             seen.add(oid)
-            geom = shapely.make_valid(geom).intersection(area)
+            geom = shapely.make_valid(shapely.force_2d(geom)).intersection(area)   # filerna har z-värden
             if not geom.is_empty:
                 out.append((cls, geom))
     return out
