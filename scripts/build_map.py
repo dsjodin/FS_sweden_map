@@ -18,6 +18,8 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
 - träd i skogarna, startgård med gårdshus, maskinhall och silo, en
   spannmålsmottagning och plats för köpta fordon (scripts/fs25_objects.py)
 - fältens grödor vid nytt spel från skiftenas grödkoder (maps/fields.xml)
+- byggnader och objekt som du placerat i spelet och hämtat med
+  import_savegame.py (maps/<namn>/placeringar.json)
 
 Kräver: fetch_osm.py, fetch_fields.py och fetch_heightmap.py för kartan.
 
@@ -347,10 +349,12 @@ def build(project, args):
     # Konfiguration: fs25-empty-map:s filer, sedan våra farmlands, modDesc-text och översiktskarta.
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
     write_farmlands(maps_dir / "farmlands.xml", order)
-    obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world)
+    placements = load_placements(project)
+    obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements)
     obj.write_fields_xml(maps_dir / "fields.xml", fields)
     obj.patch_map_xml(maps_dir / "map.xml")
     write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""), sources)
+    add_mod_dependencies(mod_dir / "modDesc.xml", sorted({p["mod"] for p in placements if p.get("mod")}))
     make_overview(project, maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
 
     missing = [f for f in local_files if not (maps_dir / f).exists()]
@@ -367,6 +371,8 @@ def build(project, args):
     print(f"\n{title}: {len(fields)} fält i {len(order)} farmlands, terräng {base:.1f}–{real_max:.1f} m ö.h.")
     print(f"Startgård: block {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
     print(f"Träd: {len(trees)}. Spannmålsmottagning: {'ja' if mill else 'ingen ledig plats hittades'}")
+    if placements:
+        print(f"Egna placeringar från spelet: {len(placements)}")
     print(f"Skrev {project.rel(zip_path)} ({zip_path.stat().st_size / 1e6:.1f} MB)")
 
 
@@ -438,6 +444,21 @@ def write_farmlands(path, order):
         '<?xml version="1.0" encoding="utf-8" standalone="no" ?>\n<map>\n'
         '    <farmlands densityMapFilename="maps/data/infoLayer_farmland.grle" numChannels="8" pricePerHa="60000">\n'
         + "\n".join(rows) + "\n    </farmlands>\n</map>\n", encoding="utf-8")
+
+
+def load_placements(project):
+    """Objekt från import_savegame.py: [{filename, position, rotation, mod}]."""
+    path = project.dir / "placeringar.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+
+
+def add_mod_dependencies(path, mods):
+    """Moddar som kartans placeringar kommer från måste vara installerade."""
+    if not mods:
+        return
+    deps = "    <dependencies>\n" + "".join(f"        <dependency>{m}</dependency>\n" for m in mods) + "    </dependencies>\n"
+    s = path.read_text(encoding="utf-8")
+    path.write_text(s.replace("</modDesc>", deps + "</modDesc>"), encoding="utf-8")
 
 
 def write_moddesc_description(path, title, description, sources):

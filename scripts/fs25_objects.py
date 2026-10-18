@@ -192,7 +192,7 @@ def add_store_spawn(root, farm, world, nid):
 
 
 # --- Konfigurationsfiler -----------------------------------------------------------------------
-def write_placeables(path, farm, mill, world):
+def write_placeables(path, farm, mill, world, placements=()):
     rows = ['<?xml version="1.0" encoding="utf-8" standalone="no" ?>', "<placeables>"]
     for b in FARM:
         x, z = world.xz(farm.e + b["dx"], farm.n + b["dz"])
@@ -206,6 +206,11 @@ def write_placeables(path, farm, mill, world):
         x, z = world.xz(mill.e, mill.n)
         rows.append(f'    <placeable filename="{GRAIN_MILL}" position="{x:.2f} {mill.height:.3f} {z:.2f}" '
                     'rotation="0 -90 0"/>')
+    for p in placements:   # från import_savegame.py, med spelets egna koordinater
+        pos = " ".join(f"{v:.3f}" for v in p["position"])
+        rot = " ".join(f"{v:g}" for v in p["rotation"])
+        rows.append(f'    <placeable filename="{p["filename"]}" position="{pos}" rotation="{rot}" '
+                    'boughtWithFarmlandOverwrite="true"/>')
     rows.append("</placeables>")
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 

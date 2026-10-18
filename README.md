@@ -52,6 +52,20 @@ MapToPlay: `build/<namn>/<mod_name>.zip`. Den bygger på
 `third_party/fs25_empty_map` och innehåller terräng, fält, farmlands,
 marktexturer och översiktskarta. Se [docs/fs25_kartformat.md](docs/fs25_kartformat.md).
 
+### Bygga i spelet i stället för i GIANTS Editor
+
+Placera byggnader och objekt i spelets byggläge, kopiera sparfilen till
+servern och för in dem i kartan:
+
+```bash
+scp -r "$env:USERPROFILE\Documents\My Games\FarmingSimulator2025\savegame1" root@ClaudeVM:~/FS_sweden_map/data/tysslinge/   # från Windows
+python scripts/import_savegame.py --map tysslinge data/tysslinge/savegame1
+python scripts/build_map.py --map tysslinge
+```
+
+Placeringarna sparas i `maps/<namn>/placeringar.json` och följer med i varje
+ombyggnad. Objekt från andra moddar blir beroenden i kartans `modDesc.xml`.
+
 Det här finns till GIANTS Editor:
 
 - `build/<namn>/data/dem.png`: höjdkarta i FS25-format, med värdena i
