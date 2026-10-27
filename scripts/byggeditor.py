@@ -43,20 +43,18 @@ DEFAULT_SIZE = 10.0      # m, för byggnader utan mått i moddens XML
 DOORS = ROOT / "maps" / "modellriktning.json"   # dörrens sida per modell (grader från lokal +z), gemensam för kartorna
 
 
-TREE_NAMES = {"aspen": "Asp", "beech": "Bok", "oak": "Ek", "downyServiceBerry": "Häggmispel (buske)"}
-
-
 def tree_types():
-    """Trädarter och storlekar som finns i spelet (samma som build_map använder)."""
+    """Alla trädarter och storlekar i spelet, svenska arter först."""
     import fs25_objects as obj
-    out = {}
-    for art, stage, _w in obj.MATURE + obj.EDGE:
-        num = re.search(r"stage(\d+)", stage)
-        label = f"{TREE_NAMES.get(art, art)}, storlek {int(num.group(1)) if num else '?'}"
-        if "var" in stage:
-            label += f" ({stage.split('_')[-1]})"
-        out[stage] = {"art": art, "stage": stage, "label": label}
-    return sorted(out.values(), key=lambda t: t["label"])
+    out = []
+    for art, (name, stages, swedish) in obj.TREE_SPECIES.items():
+        for stage in stages:
+            num = re.search(r"stage(\d+)", stage)
+            var = re.search(r"(?i)var_?(\d+)", stage)
+            label = f"{name}, storlek {int(num.group(1))}" + (f" (variant {var.group(1)})" if var else "")
+            out.append({"art": art, "stage": f"{art}_{stage}", "label": label if swedish else label + " – utländsk",
+                        "swedish": swedish})
+    return sorted(out, key=lambda t: (not t["swedish"], t["label"]))
 
 
 def footprint(poly):

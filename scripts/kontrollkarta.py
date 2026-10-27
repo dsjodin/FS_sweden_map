@@ -139,7 +139,8 @@ def main():
     osm, _ = bm.load_land(project, world)
     areas, roads, waterways = osm[0], osm[1], osm[2]
     inner = world.square()
-    forest = [r for c, g in areas if c == "forest" and g.intersects(inner) for r in rings(g.intersection(inner))]
+    forest = [r for c, g in areas if c in ("forest", "barrskog") and g.intersects(inner)
+              for r in rings(g.intersection(inner))]
     fields = [r for g, _, _ in bm.load_fields(project, world, bm.obstacles(roads, waterways, world, areas))
               for r in rings(g)]
     ix0, iy0, ix1, iy1 = inner.bounds

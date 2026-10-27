@@ -258,7 +258,7 @@ def main():
     areas, roads, waterways, _rail, buildings, _pl = osm
     cut = bm.obstacles(roads, waterways, world, areas)
     fields = [g for g, _, _ in bm.load_fields(project, world, cut)]
-    forest = [g for c, g in areas if c == "forest"]
+    forest = [g for c, g in areas if c in ("forest", "barrskog")]
     shp = chm.shape
 
     def burn(geoms):

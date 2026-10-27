@@ -18,7 +18,7 @@ from area import ROOT
 TOPO_DIR = ROOT / "data" / "topografi10"
 
 MARK_CLASSES = {
-    2645: "forest",       # Barr- och blandskog
+    2645: "barrskog",     # Barr- och blandskog
     2646: "forest",       # Lövskog
     2642: "farmland",     # Åker
     2643: "farmland",     # Fruktodling
@@ -34,6 +34,7 @@ MARK_CLASSES = {
 }
 # OSM-klasser som Marktäcke ersätter. Gårdsplaner (farmyard) finns inte i Marktäcke och tas från OSM.
 REPLACES = {"forest", "water", "residential", "meadow", "farmland", "wetland"}
+FORESTS = ("forest", "barrskog")    # lövskog (och OSM:s skog) och barr- och blandskog
 
 # Topografi 10, kommunikation: vägtyp -> vägklass i build_map.ROAD_STYLE. Saknas = används inte.
 ROAD_CLASSES = {

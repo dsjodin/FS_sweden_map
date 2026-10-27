@@ -235,7 +235,7 @@ def ground_labels(osm, world, fields, res, overrides=()):
     for cls, geom in areas:
         if not geom.intersects(sq):
             continue
-        if cls == "forest":
+        if cls in landcover.FORESTS:
             draw_polygon(d, geom, world, res, idx["forestLeaves01"], idx["grass01"])
         elif cls in ("farmyard", "residential"):
             draw_polygon(d, geom, world, res, idx["gravelSmall01"], idx["grass01"])
@@ -301,7 +301,7 @@ def build(project, args):
     if farm is None:
         sys.exit("Hittade ingen ledig plats för startgården nära startpunkten.")
     mill_blocked = unary_union([field_union, cut, farm.box.buffer(200)]
-                               + [g for c, g in areas if c in ("forest", "water", "residential")] + buildings)
+                               + [g for c, g in areas if c in landcover.FORESTS + ("water", "residential")] + buildings)
     mill = obj.mill_site(roads, farm, mill_blocked, inner)
     sites = [farm] + ([mill] if mill else [])
     edited = load_editor_buildings(project, world)          # byggeditor.py: [(Site, placeable)]
@@ -321,7 +321,12 @@ def build(project, args):
     spawn_pt = Point(farm.e - 15, farm.n + 38)   # framför gårdshuset
     no_trees = unary_union([cut, field_union, drawn.no_tree_zone(drawings)]
                            + [s_.box.buffer(2 if s_.name.startswith("byggnad") else 10) for s_ in sites])
-    trees = obj.tree_points([g for c, g in areas if c == "forest"], no_trees, world.square(5))
+    conifer = [g for c, g in areas if c == "barrskog"]
+    broadleaf = [g for c, g in areas if c == "forest"]
+    share = sum(g.area for g in conifer) / max(sum(g.area for g in conifer + broadleaf), 1)
+    trees = obj.tree_points(conifer, no_trees, world.square(5), mature=obj.CONIFER_MATURE, edge=obj.CONIFER_EDGE,
+                            max_trees=int(obj.MAX_TREES * share)) \
+        + obj.tree_points(broadleaf, no_trees, world.square(5), seed=8, max_trees=int(obj.MAX_TREES * (1 - share)))
     chm_path = project.lm / "laser" / "krontak.tif"
     if chm_path.exists():     # laser_trees.py: inga träd där Marktäckes skog saknar kronor (kalhyggen)
         before = len(trees)

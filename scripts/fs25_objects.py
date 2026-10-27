@@ -17,15 +17,55 @@ from shapely.geometry import Point, box
 from shapely.ops import unary_union
 
 # --- Träd --------------------------------------------------------------------------------------
-# Bara filer som är bekräftade i spelets data (används av mapEU). Barrträd läggs till när vi
-# vet deras filnamn.
+# Trädarter i spelets data/maps/trees (avläst ur spelets installation). Gran, ask och riktig lönn
+# finns inte i FS25; närmaste ersättare: askbladig lönn (boxelder), asiatisk björk och lind.
 TREE_DIR = "$data/maps/trees"
-MATURE = [("aspen", "aspen_stage05", 3), ("aspen", "aspen_stage06_var01", 4), ("aspen", "aspen_stage06_var02", 4),
-          ("beech", "beech_stage05", 3), ("beech", "beech_stage06_var01", 4), ("beech", "beech_stage06_var02", 4),
-          ("oak", "oak_stage04", 3)]
-EDGE = [("aspen", "aspen_stage03", 3), ("aspen", "aspen_stage04", 3), ("beech", "beech_stage03", 2),
-        ("beech", "beech_stage04", 2), ("oak", "oak_stage02", 2), ("oak", "oak_stage03", 2),
-        ("downyServiceBerry", "downyServiceBerry_stage01", 2), ("downyServiceBerry", "downyServiceBerry_stage02", 2)]
+TREE_SPECIES = {   # art: (svenskt namn, filnamn per storlek, passar i svensk natur)
+    "pinusSylvestris": ("Tall", ["stage01", "stage02", "stage03", "stage04", "stage05"], True),
+    "lodgepolePine": ("Contortatall", ["stage01", "stage02", "stage02Var2", "stage03", "stage03Var2"], True),
+    "betulaErmanii": ("Björk", ["stage01", "stage02", "stage03", "stage04"], True),
+    "aspen": ("Asp", ["stage01", "stage02", "stage03", "stage04", "stage05", "stage06_var01", "stage06_var02"], True),
+    "oak": ("Ek", ["stage01", "stage02", "stage03", "stage04", "stage05"], True),
+    "tiliaAmurensis": ("Lind", ["stage01", "stage02", "stage03", "stage04"], True),
+    "americanElm": ("Alm", ["stage01", "stage02", "stage03", "stage04", "stage05"], True),
+    "boxelder": ("Lönn (askbladig)", ["stage01", "stage02", "stage03"], True),
+    "beech": ("Bok", ["stage01", "stage02", "stage02_var02", "stage02_var03", "stage03", "stage04", "stage05",
+                      "stage06_var01", "stage06_var02"], True),
+    "cherry": ("Körsbär", ["stage01", "stage02", "stage03", "stage04"], True),
+    "apple": ("Äpple", ["stage03"], True),
+    "downyServiceBerry": ("Häggmispel (buske)", ["stage01", "stage02", "stage03"], True),
+    "goldenRain": ("Gullregn", ["stage01", "stage02", "stage03", "stage04"], False),
+    "chineseElm": ("Kinesisk alm", ["stage01", "stage02", "stage03", "stage04"], False),
+    "japaneseZelkova": ("Japansk zelkova", ["stage01", "stage02", "stage03", "stage04"], False),
+    "northernCatalpa": ("Trumpetträd", ["stage01", "stage02", "stage03", "stage04"], False),
+    "shagbarkHickory": ("Hickory", ["stage01", "stage02", "stage03", "stage04"], False),
+    "pinusTabuliformis": ("Kinesisk tall", ["stage01", "stage02", "stage03", "stage04", "stage05"], False),
+}
+
+
+def tree(art, stage, weight):
+    return (art, f"{art}_{stage}", weight)
+
+
+# Urval (art, fil, vikt) för den automatiska skogen och träden utanför skogen.
+CONIFER_MATURE = [tree("pinusSylvestris", "stage04", 3), tree("pinusSylvestris", "stage05", 4),
+                  tree("lodgepolePine", "stage03", 1), tree("lodgepolePine", "stage03Var2", 1),
+                  tree("betulaErmanii", "stage04", 1)]
+CONIFER_EDGE = [tree("pinusSylvestris", "stage02", 2), tree("pinusSylvestris", "stage03", 3),
+                tree("lodgepolePine", "stage02", 1), tree("betulaErmanii", "stage02", 1),
+                tree("betulaErmanii", "stage03", 2), tree("downyServiceBerry", "stage02", 1)]
+MATURE = [tree("betulaErmanii", "stage04", 4), tree("aspen", "stage05", 2), tree("aspen", "stage06_var01", 1),
+          tree("oak", "stage04", 2), tree("oak", "stage05", 1), tree("tiliaAmurensis", "stage04", 1),
+          tree("americanElm", "stage05", 1), tree("boxelder", "stage03", 1)]
+EDGE = [tree("betulaErmanii", "stage02", 2), tree("betulaErmanii", "stage03", 3), tree("aspen", "stage03", 2),
+        tree("aspen", "stage04", 2), tree("oak", "stage02", 1), tree("oak", "stage03", 1),
+        tree("downyServiceBerry", "stage01", 1), tree("downyServiceBerry", "stage02", 2), tree("cherry", "stage02", 1)]
+LOOSE_MATURE = [tree("oak", "stage04", 3), tree("oak", "stage05", 2), tree("tiliaAmurensis", "stage04", 2),
+                tree("betulaErmanii", "stage04", 3), tree("americanElm", "stage05", 1), tree("boxelder", "stage03", 2),
+                tree("aspen", "stage05", 1)]
+LOOSE_YOUNG = [tree("betulaErmanii", "stage02", 2), tree("betulaErmanii", "stage03", 2), tree("boxelder", "stage02", 2),
+               tree("cherry", "stage03", 1), tree("downyServiceBerry", "stage02", 2), tree("downyServiceBerry", "stage03", 2),
+               tree("oak", "stage02", 1)]
 TREE_SPACING = 10.0     # m mellan träd i skogen (med slumpad förskjutning)
 EDGE_WIDTH = 15.0       # m in från skogskanten där yngre träd och buskar står
 YOUNG_HEIGHT = 8.0      # m: lägre träd utanför skogen blir unga träd och buskar
@@ -126,8 +166,9 @@ def flatten(game, world, sites):
 
 
 # --- Träd i skogen -----------------------------------------------------------------------------
-def tree_points(forests, cut, inner, seed=7):
-    """Träd i skogsytorna: jitterat rutnät. Returnerar [(e, n, art, filnamn)]."""
+def tree_points(forests, cut, inner, seed=7, mature=MATURE, edge=EDGE, max_trees=MAX_TREES):
+    """Träd i skogsytorna: jitterat rutnät, fullvuxna inne i skogen och yngre i kanten.
+    Returnerar [(e, n, art, filnamn)]."""
     rng = np.random.default_rng(seed)
     forest = unary_union([g for g in forests if g.intersects(inner)]).intersection(inner)
     if forest.is_empty:
@@ -143,8 +184,8 @@ def tree_points(forests, cut, inner, seed=7):
     shapely.prepare(forest)
     keep = shapely.contains_xy(forest, gx, gy)
     gx, gy = gx[keep], gy[keep]
-    if len(gx) > MAX_TREES:
-        idx = rng.choice(len(gx), MAX_TREES, replace=False)
+    if len(gx) > max_trees:
+        idx = rng.choice(len(gx), max_trees, replace=False)
         gx, gy = gx[idx], gy[idx]
     shapely.prepare(core)
     in_core = shapely.contains_xy(core, gx, gy)
@@ -154,16 +195,17 @@ def tree_points(forests, cut, inner, seed=7):
         return rng.choice(len(pool), k, p=weights / weights.sum())
 
     out = []
-    mature, edge = pick(MATURE, len(gx)), pick(EDGE, len(gx))
+    pm, pe = pick(mature, len(gx)), pick(edge, len(gx))
     for i, (e, n) in enumerate(zip(gx, gy)):
-        art, stage, _ = MATURE[mature[i]] if in_core[i] else EDGE[edge[i]]
+        art, stage, _ = mature[pm[i]] if in_core[i] else edge[pe[i]]
         out.append((float(e), float(n), stage, f"{TREE_DIR}/{art}/{stage}.i3d"))
     return out
 
 
 def loose_trees(points, cut, inner, seed=9):
     """Träd utanför skogen på givna platser [[e, n] eller [e, n, höjd], ...] (laser_trees.py).
-    Låga träd (under YOUNG_HEIGHT m) blir unga träd och buskar, övriga fullvuxna lövträd."""
+    Låga träd (under YOUNG_HEIGHT m) blir unga träd och buskar, övriga fullvuxna lövträd
+    (ek, lind, björk, alm, lönn och asp)."""
     rng = np.random.default_rng(seed)
     if not points:
         return []
@@ -174,7 +216,8 @@ def loose_trees(points, cut, inner, seed=9):
         shapely.prepare(cut)
         keep &= ~shapely.contains_xy(cut, pts[:, 0], pts[:, 1])
     out = []
-    for pool, sel in ((EDGE, pts[keep][pts[keep][:, 2] < YOUNG_HEIGHT]), (MATURE, pts[keep][pts[keep][:, 2] >= YOUNG_HEIGHT])):
+    for pool, sel in ((LOOSE_YOUNG, pts[keep][pts[keep][:, 2] < YOUNG_HEIGHT]),
+                      (LOOSE_MATURE, pts[keep][pts[keep][:, 2] >= YOUNG_HEIGHT])):
         weights = np.array([w for *_, w in pool], dtype=float)
         pick = rng.choice(len(pool), len(sel), p=weights / weights.sum())
         out += [(float(e), float(n), pool[k][1], f"{TREE_DIR}/{pool[k][0]}/{pool[k][1]}.i3d")

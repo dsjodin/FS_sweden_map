@@ -76,7 +76,7 @@ def apply_land(osm, drawings, road_style):
     if not covered.is_empty:   # ritade ytor tar över skog och gårdsplaner under sig
         kept = []
         for cls, g in areas:
-            if cls in ("forest", "farmyard") and g.intersects(covered):
+            if cls in ("forest", "barrskog", "farmyard") and g.intersects(covered):
                 g = g.difference(covered)
                 if g.is_empty:
                     continue
