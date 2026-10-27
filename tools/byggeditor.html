@@ -135,7 +135,7 @@ function panel() {
       piltangenterna flyttar 0,5 m, <kbd>Delete</kbd> tar bort. Den vita linjen visar framsidan.</p>`;
   }
   if (selFoot) {
-    h += `<h2>Verklig byggnad</h2><div>${esc(selFoot.type)}${selFoot.purpose ? ' · ' + esc(selFoot.purpose) : ''}${selFoot.main ? ' · huvudbyggnad' : ''}</div>
+    h += `<h2>Verklig byggnad</h2><div>${esc(selFoot.type)}${selFoot.purpose && selFoot.purpose !== selFoot.type ? ' · ' + esc(selFoot.purpose.replace(selFoot.type + ';', '')) : ''}${selFoot.main ? ' · huvudbyggnad' : ''}</div>
       <div class="muted">${selFoot.length} × ${selFoot.width} m, ${selFoot.area} m²</div>
       <h2>${selPlace ? 'Byt till' : 'Välj byggnad'}</h2>
       <select id="mod" style="width:100%;margin-bottom:6px;padding:6px">${modOptions()}</select>
