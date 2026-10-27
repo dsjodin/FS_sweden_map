@@ -52,6 +52,7 @@ MIN_H, MAX_H = 2.5, 45.0  # m över mark som räknas som trädkrona
 SKIP_CLASSES = {2, 7, 9, 18}   # mark, lågt brus, vatten, högt brus
 MIN_CROWN = 16.0         # m², mindre fläckar räknas som brus (ledningar, enstaka träffar)
 MULTI_SHARE = 0.25       # minst så stor andel flerreturer bland de höga träffarna runt en cell = vegetation
+POWERLINE_CLEAR = 5.0    # m på var sida om en kraftledning utan träd
 MIN_TREE = 3.0           # m, lägsta trädtopp som blir ett träd utanför skogen
 TALL = 12.0              # m: högre träd har bredare kronor, så topparna söks i ett större fönster
 MARGIN = 20.0            # m utanför kartrutan
@@ -215,6 +216,18 @@ def main():
         print(f"Sparade {project.rel(chm_path)}")
     with rasterio.open(chm_path) as src:
         chm = src.read(1)
+
+    # Ledningsgator: inga kronor under kraftledningar (trådarna kan ge träffar, och gatorna är röjda).
+    import landcover
+    lines = landcover.load_powerlines(world.square(-MARGIN))
+    if lines:
+        under = rasterize(((ln.buffer(POWERLINE_CLEAR), 1) for ln in lines), out_shape=chm.shape,
+                          transform=transform, dtype="uint8") > 0
+        removed = ((chm > 0) & under).sum()
+        chm[under] = 0
+        with rasterio.open(chm_path, "r+") as dst:
+            dst.write(chm, 1)
+        print(f"  Kraftledningar: {len(lines)} sträckor, {removed * CELL * CELL / 10_000:.1f} ha kronor under dem borttagna")
 
     print("Kronor utanför skogen ...")
     osm, _ = bm.load_land(project, world)

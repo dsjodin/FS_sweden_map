@@ -136,3 +136,8 @@ def load_buildings(area):
             if poly.geom_type == "Polygon":
                 out.append((poly, attrs))
     return out
+
+
+def load_powerlines(area):
+    """[linje] för Topografi 10:s kraftledningar (ledningar / ledningslinje) inom area."""
+    return [ln for geom, _ in read_layer(topo_files("ledningar"), "ledningslinje", area, []) for ln in lines(geom)]
