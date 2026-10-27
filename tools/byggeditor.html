@@ -145,7 +145,8 @@ function panel() {
     h += `<p>Klicka på en <b style="color:#ff4b4b">röd</b> kontur för att välja en byggnad till den.
       <b style="color:#3fd16b">Gröna</b> har redan en byggnad.</p>`;
   }
-  h += `<h2>Bygg</h2><div class="row"><button class="primary" id="build">Bygg kartan</button></div><pre id="log" hidden></pre>`;
+  h += `<h2>Bygg</h2><div class="row"><button class="primary" id="build" ${building ? 'disabled' : ''}>
+      ${building ? 'Bygger …' : 'Bygg kartan'}</button></div><pre id="log" ${buildLog ? '' : 'hidden'}>${esc(buildLog)}</pre>`;
   side.innerHTML = h; drawStats();
   side.querySelectorAll('[data-r]').forEach(b => b.onclick = () => rotate(+b.dataset.r));
   const del = document.getElementById('del'); if (del) del.onclick = remove;
@@ -169,16 +170,30 @@ function panel() {
 function bindList() {
   side.querySelectorAll('.item').forEach(el => el.onclick = () => placeOn(selFoot, D.catalog[+el.dataset.i]));
 }
+let building = false, buildLog = '';
+function showBuild() {
+  const el = document.getElementById('log'), btn = document.getElementById('build');
+  if (el) { el.hidden = !buildLog; el.textContent = buildLog; el.scrollTop = 1e9; }
+  if (btn) { btn.disabled = building; btn.textContent = building ? 'Bygger …' : 'Bygg kartan'; }
+}
 async function startBuild() {
-  await fetch('api/save', {method: 'POST', body: JSON.stringify(placed)});
-  await fetch('api/build', {method: 'POST'});
-  const log = document.getElementById('log'); log.hidden = false;
+  building = true; buildLog = 'Sparar och startar bygget. Det tar en till två minuter …\n'; showBuild();
+  try {
+    await fetch('api/save', {method: 'POST', body: JSON.stringify(placed)});
+    const r = await fetch('api/build', {method: 'POST'});
+    if (!r.ok) buildLog += 'Ett bygge pågår redan, visar dess logg.\n';
+  } catch (e) {
+    building = false; buildLog += 'Kunde inte nå servern: ' + e + '\n'; showBuild(); return;
+  }
   const poll = async () => {
-    const s = await (await fetch('api/build')).json();
-    const el = document.getElementById('log'); if (el) { el.hidden = false; el.textContent = s.log; el.scrollTop = 1e9; }
-    if (s.running) setTimeout(poll, 1500);
+    try {
+      const s = await (await fetch('api/build')).json();
+      building = s.running; buildLog = s.log || buildLog;
+    } catch (e) { buildLog += '.'; }
+    showBuild();
+    if (building) setTimeout(poll, 1500);
   };
-  poll();
+  setTimeout(poll, 800);
 }
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;   // inte när man skriver i sök- eller måttfälten

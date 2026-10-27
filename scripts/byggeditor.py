@@ -113,8 +113,7 @@ def main():
     build = {"running": False, "log": ""}
 
     def run_build():
-        build.update(running=True, log="")
-        proc = subprocess.Popen([sys.executable, str(ROOT / "scripts" / "build_map.py"), "--map", project.name],
+        proc = subprocess.Popen([sys.executable, "-u", str(ROOT / "scripts" / "build_map.py"), "--map", project.name],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         for line in proc.stdout:
             build["log"] += line
@@ -159,6 +158,7 @@ def main():
                 store.write_text(json.dumps(placed, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
                 return self.send(200, json.dumps({"ok": True, "count": len(placed)}).encode())
             if self.path == "/api/build" and not build["running"]:
+                build.update(running=True, log="")       # innan tråden startar, så att webbsidan ser bygget direkt
                 threading.Thread(target=run_build, daemon=True).start()
                 return self.send(200, b'{"started": true}')
             self.send(409, b"{}")
