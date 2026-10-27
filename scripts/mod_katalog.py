@@ -133,6 +133,52 @@ class FolderMod:
         return False
 
 
+class SubZip:
+    """En mapp inuti en zip-fil, som om den vore zip-filens rot."""
+
+    def __init__(self, z, prefix):
+        self.z, self.prefix = z, prefix
+
+    def namelist(self):
+        return [n[len(self.prefix):] for n in self.z.namelist() if n.startswith(self.prefix) and n != self.prefix]
+
+    def read(self, name):
+        return self.z.read(self.prefix + name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def unwrap(path):
+    """[(moddnamn, arkiv, varning)] för en zip-fil. Klarar zip i zip och en mapp överst i
+    zip-filen; båda laddar inte i spelet, så de ger en varning."""
+    z = zipfile.ZipFile(path)
+    names = z.namelist()
+    if any(n.lower() == "moddesc.xml" for n in names):
+        return [(path.stem, z, None)]
+    inner = [n for n in names if n.lower().endswith(".zip")]
+    if inner:
+        out = []
+        for n in inner:
+            iz = zipfile.ZipFile(io.BytesIO(z.read(n)))
+            if any(x.lower() == "moddesc.xml" for x in iz.namelist()):
+                out.append((PurePosixPath(n).stem, iz,
+                            f"ligger som zip i zip-filen {path.name}. Spelet laddar den inte så: "
+                            f"packa ut {PurePosixPath(n).name} och lägg den direkt i mods-mappen."))
+        if out:
+            return out
+    sub = sorted({n.rsplit("/", 1)[0] + "/" for n in names if n.lower().endswith("/moddesc.xml")}, key=len)
+    if sub:
+        mod = sub[0].rstrip("/").split("/")[-1]
+        return [(mod, SubZip(z, sub[0]),
+                 f"har en mapp ({sub[0]}) överst i {path.name}. Spelet laddar den inte så: packa upp och "
+                 f"zippa om innehållet i mappen, så att modDesc.xml ligger direkt i zip-filen.")]
+    return [(path.stem, z, "saknar modDesc.xml")]
+
+
 def first_tag(text):
     """Namnet på rotelementet, utan XML-deklaration och kommentarer."""
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
@@ -186,12 +232,18 @@ def main():
     print(f"{len(mods)} moddar i {folder}")
     (OUT / "img").mkdir(parents=True, exist_ok=True)
     items = []
+    archives = []
     for mod, path in mods:
+        if path.is_dir():
+            archives.append((mod, FolderMod(path), None))
+            continue
         try:
-            z = zipfile.ZipFile(path) if path.is_file() else FolderMod(path)
+            archives += unwrap(path)
         except zipfile.BadZipFile:
             print(f"  {path.name}: inte en zip-fil, hoppar över", file=sys.stderr)
-            continue
+    for mod, z, warning in archives:
+        if warning:
+            print(f"  OBS: {mod} {warning}")
         n_xml = n_found = 0
         with z:
             l10n = translations(z, "")
