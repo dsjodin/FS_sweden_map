@@ -259,7 +259,8 @@ def main():
             return np.zeros(shp, bool)
         return rasterize(((g, 1) for g in geoms), out_shape=shp, transform=transform, dtype="uint8") > 0
 
-    blocked = burn([b.buffer(2) for b in buildings] + forest + [g.buffer(-1) for g in fields])
+    # Skogskanten har redan kantträd, och kronorna sticker ut några meter över Marktäckes gräns.
+    blocked = burn([b.buffer(2) for b in buildings] + [g.buffer(4) for g in forest] + [g.buffer(-1) for g in fields])
     mask = big_crowns(crown_mask(chm, blocked), transform)
     points = treetops(chm, mask, transform)
 
