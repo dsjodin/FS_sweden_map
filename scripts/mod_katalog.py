@@ -114,57 +114,95 @@ def find_image(z, xml_name, ref):
     return None
 
 
+class FolderMod:
+    """Uppackad modd (mapp med modDesc.xml) med samma gränssnitt som ZipFile."""
+
+    def __init__(self, root):
+        self.root = Path(root)
+
+    def namelist(self):
+        return [p.relative_to(self.root).as_posix() for p in self.root.rglob("*") if p.is_file()]
+
+    def read(self, name):
+        return (self.root / name).read_bytes()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def first_tag(text):
+    """Namnet på rotelementet, utan XML-deklaration och kommentarer."""
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    text = re.sub(r"<\?.*?\?>", "", text, flags=re.S)
+    m = re.search(r"<([A-Za-z_][\w.-]*)", text)
+    return m.group(1) if m else ""
+
+
+def regex_text(text, tag):
+    m = re.search(rf"<{tag}\b[^>]*>\s*(?:<en>)?\s*([^<]+)", text)
+    return html.unescape(m.group(1).strip()) if m else ""
+
+
 def parse_placeable(data):
-    try:
-        r = ET.fromstring(data)
-    except ET.ParseError:
+    """Byggnadens uppgifter, eller None om filen inte är en byggnad. Klarar XML som
+    ElementTree inte kan läsa (läser då med reguljära uttryck)."""
+    text = data.decode("utf-8", "replace").lstrip("\ufeff")
+    if first_tag(text[:50000]) != "placeable":
         return None
-    if r.tag != "placeable":
-        return None
-    sd = r.find("storeData")
-    size = r.find("base/size")
     w = l = None
-    if size is not None:
-        w, l = size.get("width"), size.get("length")
-    return {
-        "name": text_of(sd, "name"), "category": text_of(sd, "category"),
-        "price": text_of(sd, "price"), "image": text_of(sd, "image"),
-        "width": float(w) if w else None, "length": float(l) if l else None,
-        "type": r.get("type", ""),
-    }
+    for tag in re.findall(r"<size\b[^>]*>", text):        # base/size, eller var den nu ligger
+        mw, ml = re.search(r'width="([\d.]+)"', tag), re.search(r'length="([\d.]+)"', tag)
+        if mw and ml:
+            w, l = float(mw.group(1)), float(ml.group(1))
+            break
+    sd = text[text.find("<storeData"):text.find("</storeData>")] if "<storeData" in text else ""
+    mtype = re.search(r'<placeable\b[^>]*\btype="([^"]*)"', text)
+    return {"name": regex_text(sd, "name"), "category": regex_text(sd, "category"),
+            "price": regex_text(sd, "price"), "image": regex_text(sd, "image"),
+            "width": w, "length": l, "type": mtype.group(1) if mtype else ""}
+
+
+def find_mods(folder):
+    """Zip-filer och uppackade moddar (mappar med modDesc.xml), även i undermappar."""
+    zips = sorted(folder.rglob("*.zip"))
+    dirs = sorted({p.parent for p in folder.rglob("modDesc.xml")})
+    return [(z.stem, z) for z in zips] + [(d.name, d) for d in dirs]
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("folder", help="mapp med moddarnas zip-filer")
-    parser.add_argument("--sok", nargs="*", help="ta bara med moddar vars filnamn innehåller något av orden")
+    parser.add_argument("folder", help="mapp med moddarna (zip-filer eller uppackade mappar)")
+    parser.add_argument("--sok", nargs="*", help="ta bara med moddar vars namn innehåller något av orden")
     args = parser.parse_args()
     folder = Path(args.folder).expanduser()
-    zips = sorted(folder.glob("*.zip"))
+    mods = find_mods(folder)
     if args.sok:
-        zips = [z for z in zips if any(w.lower() in z.name.lower() for w in args.sok)]
-    if not zips:
-        sys.exit(f"Inga zip-filer i {folder}.")
+        mods = [(m, p) for m, p in mods if any(w.lower() in m.lower() for w in args.sok)]
+    if not mods:
+        sys.exit(f"Inga moddar (zip-filer eller mappar med modDesc.xml) i {folder}.")
+    print(f"{len(mods)} moddar i {folder}")
     (OUT / "img").mkdir(parents=True, exist_ok=True)
     items = []
-    for zpath in zips:
-        mod = zpath.stem
+    for mod, path in mods:
         try:
-            z = zipfile.ZipFile(zpath)
+            z = zipfile.ZipFile(path) if path.is_file() else FolderMod(path)
         except zipfile.BadZipFile:
-            print(f"  {zpath.name}: inte en zip-fil, hoppar över", file=sys.stderr)
+            print(f"  {path.name}: inte en zip-fil, hoppar över", file=sys.stderr)
             continue
+        n_xml = n_found = 0
         with z:
             l10n = translations(z, "")
             for name in z.namelist():
                 if not name.lower().endswith(".xml") or name.lower().endswith("moddesc.xml"):
                     continue
-                data = z.read(name)
-                if b"<placeable" not in data[:2000]:
-                    continue
-                info = parse_placeable(data)
+                n_xml += 1
+                info = parse_placeable(z.read(name))
                 if info is None:
                     continue
+                n_found += 1
                 if info["name"].startswith("$l10n_"):
                     info["name"] = l10n.get(info["name"][6:], info["name"])
                 img_name = find_image(z, name, info["image"])
@@ -178,7 +216,9 @@ def main():
                     except Exception:   # noqa: BLE001 - okänt DDS-format: visa utan bild
                         thumb = None
                 items.append({**info, "mod": mod, "file": name, "path": f"$moddir${mod}/{name}", "thumb": thumb})
-        print(f"  {mod}: {sum(i['mod'] == mod for i in items)} byggnader")
+        mine = [i for i in items if i["mod"] == mod]
+        print(f"  {mod}: {n_xml} xml-filer, {n_found} byggnader, {sum(1 for i in mine if i['width'])} med mått, "
+              f"{sum(1 for i in mine if i['thumb'])} med bild")
 
     cards = []
     for it in sorted(items, key=lambda i: (i["mod"], i["name"])):
@@ -192,7 +232,7 @@ def main():
             f'<div class="size">{size}</div>'
             f'<div class="meta">{html.escape(it["category"])} · pris {html.escape(it["price"])}<br>'
             f'{html.escape(it["mod"])}<br>{html.escape(it["file"])}</div></div></div>')
-    (OUT / "index.html").write_text(PAGE.replace("__COUNT__", str(len(items))).replace("__MODS__", str(len(zips)))
+    (OUT / "index.html").write_text(PAGE.replace("__COUNT__", str(len(items))).replace("__MODS__", str(len(mods)))
                                     .replace("__CARDS__", "\n".join(cards)), encoding="utf-8")
     (OUT / "katalog.json").write_text(json.dumps(items, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"Skrev {OUT.relative_to(ROOT)}/index.html ({len(items)} byggnader, "

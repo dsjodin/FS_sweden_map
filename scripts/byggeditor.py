@@ -38,6 +38,7 @@ TEMPLATE = ROOT / "tools" / "byggeditor.html"
 CATALOG = ROOT / "build" / "mod_katalog"
 MIN_AREA = 12.0          # m², mindre byggnader visas inte
 ORTHO_RES = 1.0          # m per pixel för bakgrunden
+DEFAULT_SIZE = 10.0      # m, för byggnader utan mått i moddens XML
 
 
 def footprint(poly):
@@ -85,7 +86,10 @@ def prepare(project, world, out):
     if overview.exists():
         backgrounds.append({"name": "Spelets kartbild", "file": "bg/overview.png", "half": world.size})
     catalog = json.loads((CATALOG / "katalog.json").read_text(encoding="utf-8")) if (CATALOG / "katalog.json").exists() else []
-    catalog = [c for c in catalog if c.get("width") and c.get("length")]
+    for c in catalog:              # mått saknas i XML-filen: anta 10 × 10 m, kan ändras i editorn
+        c["guess"] = not (c.get("width") and c.get("length"))
+        if c["guess"]:
+            c["width"] = c["length"] = DEFAULT_SIZE
     return {"title": project.config.get("title", project.name), "half": world.half,
             "buildings": blds, "backgrounds": backgrounds, "catalog": catalog}, overview
 
