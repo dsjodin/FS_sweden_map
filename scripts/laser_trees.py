@@ -2,8 +2,11 @@
 """Träd ur Lantmäteriets laserdata (Laserdata Skog, CC BY 4.0).
 
 Laserskanningen mäter höjden på allt som står på marken. Höjd över mark får
-vi genom att dra av markhöjdmodellen. Allt som är 2,5–45 m högt och inte en
-byggnad räknas som trädkrona. Det fungerar oavsett årstid och ger:
+vi genom att dra av markhöjdmodellen. Det som är 2,5–45 m högt och där
+laserpulserna ger flera returer (pulsen tränger in genom grenverket, också
+utan löv) räknas som trädkrona. Tak och ledningar ger bara en retur och
+sorteras bort. Varje trädtopp (lokalt högsta punkt i krontaket) blir ett träd.
+Det fungerar oavsett årstid och ger:
 
 - trädkronor i hela kartan, också utanför skogen: åkerholmar, trädrader längs
   diken och åar, alléer och gårdsträd
@@ -48,7 +51,9 @@ CELL = 2.0               # m per cell i krontaket
 MIN_H, MAX_H = 2.5, 45.0  # m över mark som räknas som trädkrona
 SKIP_CLASSES = {2, 7, 9, 18}   # mark, lågt brus, vatten, högt brus
 MIN_CROWN = 16.0         # m², mindre fläckar räknas som brus (ledningar, enstaka träffar)
-TREE_SPACING = 7.0       # m mellan träd i en trädgrupp
+MULTI_SHARE = 0.25       # minst så stor andel flerreturer bland de höga träffarna runt en cell = vegetation
+MIN_TREE = 3.0           # m, lägsta trädtopp som blir ett träd utanför skogen
+TALL = 12.0              # m: högre träd har bredare kronor, så topparna söks i ett större fönster
 MARGIN = 20.0            # m utanför kartrutan
 to_wgs = Transformer.from_crs("EPSG:3006", "EPSG:4326", always_xy=True).transform
 
@@ -82,22 +87,39 @@ def read_points(href, bounds, user, password):
             pts = reader.query(bounds=b)
     finally:
         copc.requests_retry_session = orig
-    return np.asarray(pts.x), np.asarray(pts.y), np.asarray(pts.z), np.asarray(pts.classification)
+    return (np.asarray(pts.x), np.asarray(pts.y), np.asarray(pts.z), np.asarray(pts.classification),
+            np.asarray(pts.number_of_returns))
 
 
-def canopy_height(x, y, z, cls, ground, bounds):
-    """Högsta höjd över mark per cell. ground(x, y) ger markhöjden."""
+def canopy_parts(x, y, z, cls, nret, ground, bounds):
+    """Per cell: högsta höjd över mark, antal höga träffar och hur många av dem som
+    kommer från pulser med flera returer. ground(x, y) ger markhöjden."""
     x0, y0, x1, y1 = bounds
     nx, ny = int(round((x1 - x0) / CELL)), int(round((y1 - y0) / CELL))
     keep = ~np.isin(cls, list(SKIP_CLASSES)) & (x >= x0) & (x < x1) & (y >= y0) & (y < y1)
-    x, y, z = x[keep], y[keep], z[keep]
+    x, y, z, nret = x[keep], y[keep], z[keep], nret[keep]
     hag = z - ground(x, y)
     ok = (hag >= MIN_H) & (hag <= MAX_H)
     col = np.clip(((x[ok] - x0) / CELL).astype(int), 0, nx - 1)
     row = np.clip(((y1 - y[ok]) / CELL).astype(int), 0, ny - 1)
-    chm = np.zeros(ny * nx, np.float32)
-    np.maximum.at(chm, row * nx + col, hag[ok].astype(np.float32))
-    return chm.reshape(ny, nx)
+    idx = row * nx + col
+    top = np.zeros(ny * nx, np.float32)
+    np.maximum.at(top, idx, hag[ok].astype(np.float32))
+    high = np.bincount(idx, minlength=ny * nx).astype(np.float32)
+    multi = np.bincount(idx, weights=(nret[ok] > 1), minlength=ny * nx).astype(np.float32)
+    return top.reshape(ny, nx), high.reshape(ny, nx), multi.reshape(ny, nx)
+
+
+def box_sum(a, k=3):
+    p = k // 2
+    s = np.pad(a.astype(np.float64), p + 1).cumsum(0).cumsum(1)
+    return (s[k:, k:] - s[:-k, k:] - s[k:, :-k] + s[:-k, :-k])[: a.shape[0], : a.shape[1]]
+
+
+def vegetation_only(top, high, multi):
+    """Krontak där bara vegetation är kvar: tak och ledningar ger nästan bara enkelreturer."""
+    share = box_sum(multi) / np.maximum(box_sum(high), 1)
+    return np.where((top > 0) & (share >= MULTI_SHARE), top, 0).astype(np.float32)
 
 
 def ground_sampler(dtm_path):
@@ -121,28 +143,27 @@ def crown_mask(chm, blocked):
     return (np.array(m) > 0) & ~blocked
 
 
-def tree_points(mask, chm, transform):
-    """Träd med cirka TREE_SPACING mellanrum i varje krona, med kronans höjd där."""
-    hmax = np.array(Image.fromarray(chm).filter(ImageFilter.MaxFilter(3)))   # högsta höjd inom 3 celler
-    inv = ~transform
-    out = []
-    for geom, v in shapes(mask.astype(np.uint8), mask=mask, transform=transform):
-        crown = shape(geom)
-        if v != 1 or crown.area < MIN_CROWN:
-            continue
-        minx, miny, maxx, maxy = crown.bounds
-        ge, gn = np.meshgrid(np.arange(minx + TREE_SPACING / 2, maxx, TREE_SPACING),
-                             np.arange(miny + TREE_SPACING / 2, maxy, TREE_SPACING))
-        ge, gn = ge.ravel(), gn.ravel()
-        inside = shapely.contains_xy(crown, ge, gn)
-        ge, gn = ge[inside], gn[inside]
-        if ge.size == 0:                       # liten krona: ett träd mitt i
-            p = crown.representative_point()
-            ge, gn = np.array([p.x]), np.array([p.y])
-        c, r = inv * (ge, gn)
-        h = hmax[np.clip(r.astype(int), 0, chm.shape[0] - 1), np.clip(c.astype(int), 0, chm.shape[1] - 1)]
-        out += [[round(float(e), 1), round(float(n), 1), round(float(hh), 1)] for e, n, hh in zip(ge, gn, h) if hh > 0]
-    return out
+def big_crowns(mask, transform):
+    """Masken utan kronor mindre än MIN_CROWN (brus, enstaka träffar)."""
+    keep = [shape(g) for g, v in shapes(mask.astype(np.uint8), mask=mask, transform=transform)
+            if v == 1 and shape(g).area >= MIN_CROWN]
+    if not keep:
+        return np.zeros(mask.shape, bool)
+    return rasterize(((g, 1) for g in keep), out_shape=mask.shape, transform=transform, dtype="uint8") > 0
+
+
+def treetops(chm, mask, transform):
+    """Ett träd per trädtopp: lokalt högsta punkt i ett utjämnat krontak, inom masken."""
+    filled = np.array(Image.fromarray(chm).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3)))
+    smooth = (box_sum(filled) / 9.0).astype(np.float32)
+    smooth += np.random.default_rng(0).uniform(0, 1e-3, smooth.shape).astype(np.float32)   # bryt platåer
+    peak5 = smooth >= np.array(Image.fromarray(smooth).filter(ImageFilter.MaxFilter(5)))   # inget högre inom 4 m
+    peak7 = smooth >= np.array(Image.fromarray(smooth).filter(ImageFilter.MaxFilter(7)))   # inget högre inom 6 m
+    tops = mask & (smooth >= MIN_TREE) & np.where(smooth >= TALL, peak7, peak5)
+    rows, cols = np.nonzero(tops)
+    es, ns = transform * (cols + 0.5, rows + 0.5)
+    return [[round(float(e), 1), round(float(n), 1), round(float(smooth[r, c]), 1)]
+            for e, n, r, c in zip(es, ns, rows, cols)]
 
 
 def main():
@@ -169,21 +190,24 @@ def main():
         ground = ground_sampler(dtm)
         tiles = search((x0, y0, x1, y1))
         print(f"{len(tiles)} laserrutor berör kartan")
-        chm = None
+        parts = None
         for tile_id, (tx0, ty0, tx1, ty1), href in tiles:
             b = (max(x0, tx0), max(y0, ty0), min(x1, tx1), min(y1, ty1))
             if b[0] >= b[2] or b[1] >= b[3]:
                 continue
             print(f"  läser {tile_id} ({(b[2] - b[0]) / 1000:.1f}×{(b[3] - b[1]) / 1000:.1f} km) ...", flush=True)
             try:
-                x, y, z, cls = read_points(href, b, user, password)
+                x, y, z, cls, nret = read_points(href, b, user, password)
             except Exception as exc:   # noqa: BLE001 - visa felet och fortsätt inte
                 sys.exit(f"Kunde inte läsa {href}: {exc}\nHar kontot behörighet till Laserdata Nedladdning, skog?")
             print(f"    {len(x):,} punkter".replace(",", " "))
-            part = canopy_height(x, y, z, cls, ground, (x0, y0, x1, y1))
-            chm = part if chm is None else np.maximum(chm, part)   # rutor kan överlappa
-        if chm is None:
+            part = canopy_parts(x, y, z, cls, nret, ground, (x0, y0, x1, y1))
+            parts = part if parts is None else (np.maximum(parts[0], part[0]), parts[1] + part[1], parts[2] + part[2])
+        if parts is None:
             sys.exit("Ingen laserdata täcker kartan.")
+        chm = vegetation_only(*parts)
+        print(f"  {((parts[0] > 0) & (chm == 0)).sum() * CELL * CELL / 10_000:.1f} ha höga träffar utan flerreturer "
+              "(tak, ledningar) sorterades bort")
         out_dir.mkdir(parents=True, exist_ok=True)
         with rasterio.open(chm_path, "w", driver="GTiff", width=chm.shape[1], height=chm.shape[0], count=1,
                            dtype="float32", crs="EPSG:3006", transform=transform, compress="deflate") as dst:
@@ -207,8 +231,8 @@ def main():
         return rasterize(((g, 1) for g in geoms), out_shape=shp, transform=transform, dtype="uint8") > 0
 
     blocked = burn([b.buffer(2) for b in buildings] + forest + [g.buffer(-1) for g in fields])
-    mask = crown_mask(chm, blocked)
-    points = tree_points(mask, chm, transform)
+    mask = big_crowns(crown_mask(chm, blocked), transform)
+    points = treetops(chm, mask, transform)
 
     in_forest = burn(forest)
     cover = ((chm > 0) & in_forest).sum() / max(in_forest.sum(), 1)
