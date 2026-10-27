@@ -78,8 +78,8 @@ def read_layer(paths, layer, area, columns):
         if info["crs"] and info["crs"] != "EPSG:3006":
             raise ValueError(f"{path.name} har koordinatsystemet {info['crs']}, väntade SWEREF 99 TM (EPSG:3006).")
         cols = ["objektidentitet"] + [c for c in columns if c in info["fields"]]
-        _meta, _fids, wkb, data = pyogrio.raw.read(path, layer=layer, bbox=area.bounds, columns=cols)
-        values = dict(zip(cols, data))
+        meta, _fids, wkb, data = pyogrio.raw.read(path, layer=layer, bbox=area.bounds, columns=cols)
+        values = dict(zip(meta["fields"], data))   # i filens kolumnordning, inte den begärda
         for i, geom in enumerate(shapely.from_wkb(wkb)):
             oid = values["objektidentitet"][i]
             if geom is None or oid in seen:      # samma objekt kan finnas i två kommuners eller läns filer
