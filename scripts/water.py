@@ -20,10 +20,11 @@ from rasterio.transform import from_origin
 from shapely.geometry import LineString
 
 STREAM_WIDTH = 2.4       # m, vattenremsans bredd i diken och bäckar
-STREAM_CUT = 2.5         # m på var sida om linjen där rännan sänks
 STREAM_DEPTH = 0.7       # m från vattenytan ned till rännans botten
 WATER_ABOVE_BOTTOM = 0.3 # m vatten över dikesbottnen
-SNAP = 10.0              # m åt sidan där dikets botten söks (Topografi 10:s linjer har 4,5–9,5 m osäkerhet)
+SNAP = 20.0              # m åt sidan där dikets botten söks (Topografi 10:s linjer har 4,5–9,5 m osäkerhet)
+EDGE_CLEAR = 0.1         # m som vattnet minst ligger under terrängen strax utanför remsans kanter
+CUT_RINGS = ((1.5, 1.0), (2.5, 0.5), (3.5, 0.15))   # (m från mitten, andel av STREAM_DEPTH): mjuk ränna
 STREAM_STEP = 4.0        # m mellan punkterna längs remsan
 ROAD_GAP = 1.5           # m utanför vägkanten där diket går i trumma (inget vatten, ingen ränna)
 LAKE_DEPTH = 1.5         # m från vattenytan ned till botten i sjöar och åar
@@ -74,7 +75,7 @@ def snap_lines(game, world, waterways):
         nrm = np.column_stack([-tang[:, 1], tang[:, 0]])
         cand = pts[:, None, :] + nrm[:, None, :] * offsets[None, :, None]           # (punkter, förskjutningar, 2)
         h = _sample(game, world, cand[..., 0], cand[..., 1]).astype(float)
-        h += np.abs(offsets)[None, :] * 0.01                                        # vid lika höjd: närmast
+        h += np.abs(offsets)[None, :] * 0.02                                        # närmare föredras
         best = offsets[np.argmin(h, axis=1)]
         ok = shapely.contains_xy(inside, pts[:, 0], pts[:, 1])
         best[~ok] = 0.0
@@ -163,11 +164,17 @@ def build_water(game, world, areas, waterways, roads=()):
                 continue
             d = np.linspace(0, part.length, max(int(part.length / STREAM_STEP) + 1, 2))
             pts = np.array([part.interpolate(x).coords[0] for x in d])
-            h = _sample(bed, world, pts[:, 0], pts[:, 1]).astype(float) + WATER_ABOVE_BOTTOM
-            h = np.convolve(np.pad(h, 2, mode="edge"), np.ones(5) / 5, mode="valid")   # jämna ut längs linjen
             tang = np.gradient(pts, axis=0)
             tang /= np.maximum(np.linalg.norm(tang, axis=1, keepdims=True), 1e-6)
-            normal = np.column_stack([-tang[:, 1], tang[:, 0]]) * STREAM_WIDTH / 2
+            unit = np.column_stack([-tang[:, 1], tang[:, 0]])
+            normal = unit * STREAM_WIDTH / 2
+            # Vattnet får aldrig ligga över marken strax utanför kanterna (annars svävar det i en slänt).
+            reach = unit * (STREAM_WIDTH / 2 + 0.8)
+            banks = np.minimum(_sample(game, world, *(pts + reach).T), _sample(game, world, *(pts - reach).T))
+            limit = banks.astype(float) - EDGE_CLEAR
+            h = _sample(bed, world, pts[:, 0], pts[:, 1]).astype(float) + WATER_ABOVE_BOTTOM
+            h = np.convolve(np.pad(np.minimum(h, limit), 2, mode="edge"), np.ones(5) / 5, mode="valid")
+            h = np.minimum(h, limit)
             left, right = pts + normal, pts - normal
             verts = []
             for k in range(len(pts)):
@@ -178,16 +185,20 @@ def build_water(game, world, areas, waterways, roads=()):
                 faces += [(a, b, c), (b, e, c)]
             meshes.append((f"stream{i + 1:03d}_{len(meshes)}", verts, faces))
             for k in range(len(pts) - 1):
-                seg = LineString([pts[k], pts[k + 1]]).buffer(STREAM_CUT)
-                if road_zone is not None and road_zone.intersects(seg):
-                    seg = seg.difference(road_zone)
-                cut_shapes.append((seg, float(min(h[k], h[k + 1])) - STREAM_DEPTH))
+                line_k = LineString([pts[k], pts[k + 1]])
+                for radius, share in CUT_RINGS:
+                    seg = line_k.buffer(radius)
+                    if road_zone is not None and road_zone.intersects(seg):
+                        seg = seg.difference(road_zone)
+                    cut_shapes.append((seg, float(min(h[k], h[k + 1])) - STREAM_DEPTH * share, radius))
 
     lake_mask = rasterize(((g, 1) for g in lakes if not g.is_empty), out_shape=game.shape, transform=transform,
                           dtype="uint8") > 0 if lakes else np.zeros(game.shape, bool)
     game[lake_mask] = np.minimum(game[lake_mask], np.maximum(low[lake_mask] - LAKE_DEPTH, 0.5))   # följer fallet
     if cut_shapes:
-        bottom = rasterize(((g, v) for g, v in cut_shapes if not g.is_empty), out_shape=game.shape,
+        # Yttre ringar först, så att de djupare inre vinner där de överlappar.
+        cut_shapes.sort(key=lambda t: -t[2])
+        bottom = rasterize(((g, v) for g, v, _r in cut_shapes if not g.is_empty), out_shape=game.shape,
                            transform=transform, fill=np.nan, dtype="float32")
         sel = ~np.isnan(bottom)
         game[sel] = np.minimum(game[sel], np.maximum(bottom[sel], 0.5))
