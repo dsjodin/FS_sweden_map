@@ -6,7 +6,8 @@ vi genom att dra av markhöjdmodellen. Det som är 2,5–45 m högt och där
 laserpulserna ger flera returer (pulsen tränger in genom grenverket, också
 utan löv) räknas som trädkrona. Tak och ledningar ger bara en retur och
 sorteras bort. Träden sätts från de högsta punkterna i krontaket och nedåt, med
-6–10 m mellanrum beroende på höjd, så att en allé blir en rad träd.
+7–12 m mellanrum beroende på höjd (justeras med --avstand), så att en allé blir
+en rad träd.
 Det fungerar oavsett årstid och ger:
 
 - trädkronor i hela kartan, också utanför skogen: åkerholmar, trädrader längs
@@ -27,6 +28,7 @@ LM_PASSWORD) och höjdmodellen (fetch_heightmap.py).
 Användning:
     python scripts/laser_trees.py [--map tysslinge]
     python scripts/laser_trees.py --map tysslinge --hamta-om     läs laserdatan på nytt
+    python scripts/laser_trees.py --map tysslinge --avstand 1.2  glesare träd (0.8 = tätare)
 """
 import argparse
 import json
@@ -54,7 +56,8 @@ SKIP_CLASSES = {2, 7, 9, 18}   # mark, lågt brus, vatten, högt brus
 MIN_CROWN = 16.0         # m², mindre fläckar räknas som brus (ledningar, enstaka träffar)
 MULTI_SHARE = 0.25       # minst så stor andel flerreturer bland de höga träffarna runt en cell = vegetation
 POWERLINE_CLEAR = 5.0    # m på var sida om en kraftledning utan träd
-MIN_TREE = 3.0           # m, lägsta trädtopp som blir ett träd utanför skogen
+MIN_TREE = 4.0           # m, lägsta trädtopp som blir ett träd utanför skogen (lägre: buskar och häckar)
+SPACING = ((8.0, 7.0), (18.0, 10.0), (99.0, 12.0))   # (träd lägre än m, minsta avstånd m)
 MARGIN = 20.0            # m utanför kartrutan
 to_wgs = Transformer.from_crs("EPSG:3006", "EPSG:4326", always_xy=True).transform
 
@@ -153,12 +156,15 @@ def big_crowns(mask, transform):
     return rasterize(((g, 1) for g in keep), out_shape=mask.shape, transform=transform, dtype="uint8") > 0
 
 
-def tree_spacing(h):
+def tree_spacing(h, factor=1.0):
     """Minsta avstånd (m) mellan två träd, efter höjd: höga träd har bredare kronor."""
-    return np.where(h < 10, 6.0, np.where(h < 20, 8.0, 10.0))
+    out = np.full(h.shape, SPACING[-1][1])
+    for limit, dist in reversed(SPACING):
+        out[h < limit] = dist
+    return out * factor
 
 
-def treetops(chm, mask, transform):
+def treetops(chm, mask, transform, factor=1.0):
     """Träd i kronorna: högsta punkten först, sedan nästa högsta som ligger minst
     tree_spacing(h) från alla redan valda, och så vidare. En allé blir en rad
     med träd, en bred krona får flera träd."""
@@ -168,7 +174,7 @@ def treetops(chm, mask, transform):
     rows, cols = np.nonzero(cand)
     order = np.argsort(-smooth[rows, cols], kind="stable")
     rows, cols = rows[order], cols[order]
-    spacing = tree_spacing(smooth[rows, cols])
+    spacing = tree_spacing(smooth[rows, cols], factor)
     taken = np.zeros(chm.shape, bool)
     out = []
     for r, c, sp in zip(rows, cols, spacing):
@@ -187,6 +193,8 @@ def main():
     parser = argparse.ArgumentParser()
     add_map_argument(parser)
     parser.add_argument("--hamta-om", action="store_true", help="läs laserdatan på nytt även om krontaket finns")
+    parser.add_argument("--avstand", type=float, default=1.0,
+                        help="faktor på avståndet mellan träd: 1.2 = glesare, 0.8 = tätare (standard 1.0)")
     args = parser.parse_args()
     project = open_map(args.map)
 
@@ -262,7 +270,7 @@ def main():
     # Skogskanten har redan kantträd, och kronorna sticker ut några meter över Marktäckes gräns.
     blocked = burn([b.buffer(2) for b in buildings] + [g.buffer(4) for g in forest] + [g.buffer(-1) for g in fields])
     mask = big_crowns(crown_mask(chm, blocked), transform)
-    points = treetops(chm, mask, transform)
+    points = treetops(chm, mask, transform, args.avstand)
 
     in_forest = burn(forest)
     cover = ((chm > 0) & in_forest).sum() / max(in_forest.sum(), 1)
