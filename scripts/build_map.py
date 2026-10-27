@@ -16,8 +16,8 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
 - marktexturer: asfalt, grus, skogsmark, åkerjord och gräs
 - översiktskarta (PDA) ritad från samma data. Spelet visar den över dubbla
   kartytan, så den täcker också omgivningen runt kartan.
-- träd i skogarna och, om data/<namn>/lm/trad.json finns, åkerholmar, trädrader
-  och gårdsträd på angivna platser. Startgård med gårdshus, maskinhall och silo, en
+- träd i skogarna och, om laser_trees.py har körts, bara där laserdata visar
+  kronor, samt åkerholmar, trädrader och gårdsträd utanför skogen. Startgård med gårdshus, maskinhall och silo, en
   spannmålsmottagning och plats för köpta fordon (scripts/fs25_objects.py)
 - fältens grödor vid nytt spel från skiftenas grödkoder (maps/fields.xml)
 - byggnader och objekt som du placerat i spelet och hämtat med
@@ -298,6 +298,11 @@ def build(project, args):
     spawn_pt = Point(farm.e - 15, farm.n + 38)   # framför gårdshuset
     no_trees = unary_union([cut, field_union] + [s_.box.buffer(10) for s_ in sites])
     trees = obj.tree_points([g for c, g in areas if c == "forest"], no_trees, world.square(5))
+    chm_path = project.lm / "laser" / "krontak.tif"
+    if chm_path.exists():     # laser_trees.py: inga träd där Marktäckes skog saknar kronor (kalhyggen)
+        before = len(trees)
+        trees = obj.has_canopy(trees, chm_path)
+        print(f"  Laserdata: {before - len(trees)} skogsträd borttagna där det inte står träd")
     loose_path = project.lm / "trad.json"
     loose = []
     if loose_path.exists():   # åkerholmar, trädrader och gårdsträd: [[e, n], ...] under "points"

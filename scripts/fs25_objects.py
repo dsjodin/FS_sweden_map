@@ -28,6 +28,7 @@ EDGE = [("aspen", "aspen_stage03", 3), ("aspen", "aspen_stage04", 3), ("beech", 
         ("downyServiceBerry", "downyServiceBerry_stage01", 2), ("downyServiceBerry", "downyServiceBerry_stage02", 2)]
 TREE_SPACING = 10.0     # m mellan träd i skogen (med slumpad förskjutning)
 EDGE_WIDTH = 15.0       # m in från skogskanten där yngre träd och buskar står
+YOUNG_HEIGHT = 8.0      # m: lägre träd utanför skogen blir unga träd och buskar
 MAX_TREES = 15000
 
 # --- Byggnader ---------------------------------------------------------------------------------
@@ -161,20 +162,43 @@ def tree_points(forests, cut, inner, seed=7):
 
 
 def loose_trees(points, cut, inner, seed=9):
-    """Träd utanför skogen (från detect_trees.py): fullvuxna lövträd på givna platser."""
+    """Träd utanför skogen på givna platser [[e, n] eller [e, n, höjd], ...] (laser_trees.py).
+    Låga träd (under YOUNG_HEIGHT m) blir unga träd och buskar, övriga fullvuxna lövträd."""
     rng = np.random.default_rng(seed)
     if not points:
         return []
-    pts = np.array(points, dtype=float)
+    pts = np.array([list(p) + [99.0] * (3 - len(p)) for p in points], dtype=float)
     shapely.prepare(inner)
     keep = shapely.contains_xy(inner, pts[:, 0], pts[:, 1])
     if not cut.is_empty:
         shapely.prepare(cut)
         keep &= ~shapely.contains_xy(cut, pts[:, 0], pts[:, 1])
-    weights = np.array([w for *_, w in MATURE], dtype=float)
-    pick = rng.choice(len(MATURE), int(keep.sum()), p=weights / weights.sum())
-    return [(float(e), float(n), MATURE[k][1], f"{TREE_DIR}/{MATURE[k][0]}/{MATURE[k][1]}.i3d")
-            for (e, n), k in zip(pts[keep], pick)]
+    out = []
+    for pool, sel in ((EDGE, pts[keep][pts[keep][:, 2] < YOUNG_HEIGHT]), (MATURE, pts[keep][pts[keep][:, 2] >= YOUNG_HEIGHT])):
+        weights = np.array([w for *_, w in pool], dtype=float)
+        pick = rng.choice(len(pool), len(sel), p=weights / weights.sum())
+        out += [(float(e), float(n), pool[k][1], f"{TREE_DIR}/{pool[k][0]}/{pool[k][1]}.i3d")
+                for (e, n, _h), k in zip(sel, pick)]
+    return out
+
+
+def has_canopy(trees, chm_path, radius_cells=1):
+    """Behåll bara träd där laserns krontak har en krona (inom radius_cells celler)."""
+    import rasterio
+    from PIL import Image, ImageFilter
+
+    if not trees:
+        return trees
+    with rasterio.open(chm_path) as src:
+        chm, inv = src.read(1), ~src.transform
+    near = np.array(Image.fromarray(chm).filter(ImageFilter.MaxFilter(2 * radius_cells + 1))) > 0
+    xy = np.array([(e, n) for e, n, *_ in trees])
+    c, r = inv * (xy[:, 0], xy[:, 1])
+    r, c = r.astype(int), c.astype(int)
+    inside = (r >= 0) & (r < chm.shape[0]) & (c >= 0) & (c < chm.shape[1])
+    ok = np.ones(len(trees), bool)            # utanför krontaket: behåll
+    ok[inside] = near[r[inside], c[inside]]
+    return [t for t, k in zip(trees, ok) if k]
 
 
 # --- i3d-tillägg -------------------------------------------------------------------------------
