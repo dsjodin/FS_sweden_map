@@ -211,6 +211,52 @@ def parse_placeable(data):
             "width": w, "length": l, "type": mtype.group(1) if mtype else ""}
 
 
+AREA_NODE = re.compile(r"(level|test|clear)area", re.I)
+
+
+def size_from_i3d(z, xml_name, text):
+    """Grundytan ur byggnadens modellfil när <size> saknas: utbredningen (x, z) för
+    hjälppunkterna som planar marken och spärrar ytan (levelArea, testArea, clearArea)."""
+    import math
+    m = re.search(r"<base\b.*?<filename>\s*([^<]+?)\s*</filename>", text, re.S) or \
+        re.search(r"<filename>\s*([^<]+?\.i3d)\s*</filename>", text)
+    if not m:
+        return None
+    ref = m.group(1).replace("\\", "/").replace("$moddir$", "")
+    names = {n.lower(): n for n in z.namelist()}
+    hit = names.get(ref.lower().lstrip("./")) or names.get(str(PurePosixPath(xml_name).parent / ref).lower())
+    if not hit:
+        return None
+    try:
+        root = ET.fromstring(z.read(hit))
+    except ET.ParseError:
+        return None
+    pts = []
+
+    def walk(node, ox, oz, yaw, inside):
+        for child in node:
+            if child.tag not in ("TransformGroup", "Shape", "ReferenceNode", "Light", "Camera"):
+                continue
+            t = [float(v) for v in (child.get("translation") or "0 0 0").split()]
+            r = [float(v) for v in (child.get("rotation") or "0 0 0").split()]
+            c, s_ = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+            x, z_ = ox + t[0] * c + t[2] * s_, oz - t[0] * s_ + t[2] * c
+            here = inside or bool(AREA_NODE.search(child.get("name", "")))
+            if here:
+                pts.append((x, z_))
+            walk(child, x, z_, yaw + r[1], here)
+
+    scene = root.find("Scene")
+    if scene is None:
+        return None
+    walk(scene, 0.0, 0.0, 0.0, False)
+    if len(pts) < 2:
+        return None
+    xs, zs = [p[0] for p in pts], [p[1] for p in pts]
+    w, l = max(xs) - min(xs), max(zs) - min(zs)
+    return (round(w, 1), round(l, 1)) if w >= 1.5 and l >= 1.5 else None
+
+
 def find_mods(folder):
     """Zip-filer och uppackade moddar (mappar med modDesc.xml), även i undermappar."""
     zips = sorted(folder.rglob("*.zip"))
@@ -251,10 +297,16 @@ def main():
                 if not name.lower().endswith(".xml") or name.lower().endswith("moddesc.xml"):
                     continue
                 n_xml += 1
-                info = parse_placeable(z.read(name))
+                data = z.read(name)
+                info = parse_placeable(data)
                 if info is None:
                     continue
                 n_found += 1
+                info["size_from"] = "xml" if info["width"] else None
+                if not info["width"]:
+                    size = size_from_i3d(z, name, data.decode("utf-8", "replace"))
+                    if size:
+                        info["width"], info["length"], info["size_from"] = size[0], size[1], "i3d"
                 if info["name"].startswith("$l10n_"):
                     info["name"] = l10n.get(info["name"][6:], info["name"])
                 img_name = find_image(z, name, info["image"])
@@ -269,12 +321,15 @@ def main():
                         thumb = None
                 items.append({**info, "mod": mod, "file": name, "path": f"$moddir${mod}/{name}", "thumb": thumb})
         mine = [i for i in items if i["mod"] == mod]
-        print(f"  {mod}: {n_xml} xml-filer, {n_found} byggnader, {sum(1 for i in mine if i['width'])} med mått, "
+        print(f"  {mod}: {n_xml} xml-filer, {n_found} byggnader, {sum(1 for i in mine if i['width'])} med mått "
+              f"({sum(1 for i in mine if i['size_from'] == 'i3d')} ur modellfilen), "
               f"{sum(1 for i in mine if i['thumb'])} med bild")
 
     cards = []
     for it in sorted(items, key=lambda i: (i["mod"], i["name"])):
         size = f"{it['width']:g} × {it['length']:g} m" if it["width"] and it["length"] else "mått saknas"
+        if it.get("size_from") == "i3d":
+            size += " (ur modellfilen)"
         text = " ".join(str(it[k]) for k in ("name", "mod", "category", "file", "type")).lower()
         img = (f'<img src="{it["thumb"]}" loading="lazy" alt="">' if it["thumb"]
                else '<div class="noimg">ingen bild</div>')
