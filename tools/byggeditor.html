@@ -55,6 +55,15 @@ function save() {
   saveTimer = setTimeout(() => fetch('api/save', {method: 'POST', body: JSON.stringify(placed)}), 400);
   drawStats();
 }
+function doorOf(file) { return (D.doors && D.doors[file]) || 0; }
+function fixDoor(delta) {     // dörren sitter delta grader moturs från pilen: vrid alla av modellen, pilen står kvar
+  if (!selPlace) return;
+  const file = selPlace.file;
+  D.doors[file] = ((doorOf(file) + delta) % 360 + 360) % 360;
+  for (const p of placed) if (p.file === file) p.rot = ((p.rot - delta + 540) % 360) - 180;
+  fetch('api/doors', {method: 'POST', body: JSON.stringify(D.doors)});
+  save(); draw(); panel();
+}
 function placeOn(b, c) {
   placed = placed.filter(p => p.ref !== b.id);
   const p = {ref: b.id, file: c.path, mod: c.mod, name: c.name, thumb: c.thumb, w: c.width, l: c.length,
@@ -86,9 +95,11 @@ function draw() {
       const up = () => { map.off('mousemove', move); map.off('mouseup', up); map.dragging.enable(); save(); draw(); panel(); };
       map.on('mousemove', move); map.on('mouseup', up);
     });
-    // Riktningspil: lokal z (längd) åt "fram"
-    const r = p.rot * Math.PI / 180;
-    L.polyline([ll(p.x, p.y), ll(p.x + Math.sin(r) * p.l / 2, p.y - Math.cos(r) * p.l / 2)], {color: '#fff', weight: 2, interactive: false}).addTo(placeLayer);
+    // Pil mot dörren: modellens lokala +z vriden med dörrsidan för modellen (doorOf)
+    const r = (p.rot + doorOf(p.file)) * Math.PI / 180, ax = Math.sin(r), ay = -Math.cos(r);
+    const tip = [p.x + ax * (p.l / 2 + 3), p.y + ay * (p.l / 2 + 3)];
+    L.polyline([ll(p.x, p.y), ll(...tip)], {color: '#ffd400', weight: 3, interactive: false}).addTo(placeLayer);
+    L.circleMarker(ll(...tip), {radius: 4, color: '#ffd400', fillOpacity: 1, interactive: false}).addTo(placeLayer);
   }
 }
 function drawStats() {
@@ -130,9 +141,15 @@ function panel() {
       <div class="muted">Måtten används bara för att planera marken och rita rutan här. Ändra dem om moddens mått saknades.</div>
       <div class="row"><button data-r="-90">↺ 90°</button><button data-r="-5">↺ 5°</button><button data-r="-1">↺ 1°</button>
       <button data-r="1">↻ 1°</button><button data-r="5">↻ 5°</button><button data-r="90">↻ 90°</button></div>
-      <div class="row"><button id="del">Ta bort</button></div>
+      <div class="row"><button data-r="180">Vänd 180°</button><button id="del">Ta bort</button></div>
+      <h2>Var sitter dörren?</h2>
+      <div class="muted">Den gula pilen ska peka mot dörren. Sitter dörren på en annan sida på den här modellen,
+      tryck där den sitter. Alla ${esc(selPlace.name)} vrids då så att dörren hamnar där pilen pekade,
+      och modellen kommer ihåg det.</div>
+      <div class="row"><button data-d="180">Mitt emot pilen</button><button data-d="90">90° till vänster om pilen</button>
+      <button data-d="-90">90° till höger om pilen</button></div>
       <p class="muted">Dra byggnaden med musen. <kbd>Q</kbd>/<kbd>E</kbd> vrider 1° (med <kbd>Shift</kbd> 15°),
-      piltangenterna flyttar 0,5 m, <kbd>Delete</kbd> tar bort. Den vita linjen visar framsidan.</p>`;
+      piltangenterna flyttar 0,5 m, <kbd>F</kbd> vänder 180°, <kbd>Delete</kbd> tar bort. Den gula pilen visar dörren.</p>`;
   }
   if (selFoot) {
     h += `<h2>Verklig byggnad</h2><div>${esc(selFoot.type)}${selFoot.purpose && selFoot.purpose !== selFoot.type ? ' · ' + esc(selFoot.purpose.replace(selFoot.type + ';', '')) : ''}${selFoot.main ? ' · huvudbyggnad' : ''}</div>
@@ -149,6 +166,7 @@ function panel() {
       ${building ? 'Bygger …' : 'Bygg kartan'}</button></div><pre id="log" ${buildLog ? '' : 'hidden'}>${esc(buildLog)}</pre>`;
   side.innerHTML = h; drawStats();
   side.querySelectorAll('[data-r]').forEach(b => b.onclick = () => rotate(+b.dataset.r));
+  side.querySelectorAll('[data-d]').forEach(b => b.onclick = () => fixDoor(+b.dataset.d));
   const del = document.getElementById('del'); if (del) del.onclick = remove;
   for (const [id, key] of [['pw', 'w'], ['pl', 'l']]) {
     const el = document.getElementById(id);
@@ -205,6 +223,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'ArrowUp') nudge(0, big ? 2 : 0.5);
   else if (k === 'ArrowDown') nudge(0, big ? -2 : -0.5);
   else if (k === 'Delete' || k === 'Backspace') remove();
+  else if (k === 'f' || k === 'F') rotate(180);
   else if (k === 'Escape') { selFoot = selPlace = null; draw(); panel(); }
   else return;
   e.preventDefault();
@@ -212,7 +231,7 @@ document.addEventListener('keydown', e => {
 map.on('click', () => { selFoot = selPlace = null; draw(); panel(); });
 
 fetch('api/data').then(r => r.json()).then(d => {
-  D = d; placed = d.placed || [];
+  D = d; placed = d.placed || []; D.doors = d.doors || {};
   D.catalog.forEach(c => { if (c.thumb) c.thumb = 'img/' + c.thumb.split('/').pop(); });
   const bases = {};
   for (const bg of D.backgrounds) bases[bg.name] = L.imageOverlay(bg.file, [[-bg.half, -bg.half], [bg.half, bg.half]]);

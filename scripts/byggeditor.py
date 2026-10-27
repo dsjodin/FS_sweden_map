@@ -39,6 +39,7 @@ CATALOG = ROOT / "build" / "mod_katalog"
 MIN_AREA = 12.0          # m², mindre byggnader visas inte
 ORTHO_RES = 1.0          # m per pixel för bakgrunden
 DEFAULT_SIZE = 10.0      # m, för byggnader utan mått i moddens XML
+DOORS = ROOT / "maps" / "modellriktning.json"   # dörrens sida per modell (grader från lokal +z), gemensam för kartorna
 
 
 def footprint(poly):
@@ -140,7 +141,8 @@ def main():
             path = self.path.split("?")[0]
             if path == "/api/data":
                 placed = json.loads(store.read_text(encoding="utf-8")) if store.exists() else []
-                return self.send(200, json.dumps({**data, "placed": placed}).encode())
+                doors = json.loads(DOORS.read_text(encoding="utf-8")) if DOORS.exists() else {}
+                return self.send(200, json.dumps({**data, "placed": placed, "doors": doors}).encode())
             if path == "/api/build":
                 return self.send(200, json.dumps(build).encode())
             if path in files and files[path][0].exists():
@@ -157,6 +159,10 @@ def main():
                 placed = json.loads(body or b"[]")
                 store.write_text(json.dumps(placed, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
                 return self.send(200, json.dumps({"ok": True, "count": len(placed)}).encode())
+            if self.path == "/api/doors":
+                DOORS.write_text(json.dumps(json.loads(body or b"{}"), indent=1, ensure_ascii=False, sort_keys=True)
+                                 + "\n", encoding="utf-8")
+                return self.send(200, b'{"ok": true}')
             if self.path == "/api/build" and not build["running"]:
                 build.update(running=True, log="")       # innan tråden startar, så att webbsidan ser bygget direkt
                 threading.Thread(target=run_build, daemon=True).start()
