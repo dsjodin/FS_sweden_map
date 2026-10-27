@@ -11,10 +11,10 @@ datan.
 | Produkt | Används till | Ansökan | Status |
 |---|---|---|---|
 | Markhöjdmodell Nedladdning (grid 1+) | Terräng | Ingen ansökan om personuppgifter | Beviljad, används |
-| Ortofoto Nedladdning | Förlaga för detaljer | Texter under [Ortofoto](#ortofoto-nedladdning) | Ansökt, väntar på prövning |
-| Topografi 10 Nedladdning, vektor | Vattendrag, marktyper, vägar, byggnader | Texter under [Topografi 10](#topografi-10-nedladdning-vektor) | Ansökt, väntar på prövning |
+| Ortofoto Nedladdning | Förlaga för detaljer | Texter under [Ortofoto](#ortofoto-nedladdning) | Beviljad 2026-10 |
+| Topografi 10 Nedladdning, vektor | Vattendrag, marktyper, vägar, byggnader | Texter under [Topografi 10](#topografi-10-nedladdning-vektor) | Beviljad 2026-10 |
 | Marktäcke Nedladdning, vektor | Skog, åker, sankmark, vatten | Texter under [Marktäcke](#marktäcke-nedladdning-vektor) | Beviljad direkt (automatiskt godkänd) |
-| Byggnad Nedladdning, vektor | Byggnader och deras ändamål | Texter under [Byggnad](#byggnad-nedladdning-vektor) | Ansökt, väntar på prövning |
+| Byggnad Nedladdning, vektor | Byggnader och deras ändamål | Texter under [Byggnad](#byggnad-nedladdning-vektor) | Beviljad 2026-10 |
 | Hydrografi Nedladdning | Vattendrag | Går inte att få | Avslagen: bara för myndigheter, tillståndsärenden och forskning |
 
 Uppdatera tabellen när en ansökan beviljas.
