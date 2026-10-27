@@ -81,6 +81,8 @@ MEADOW_CODES = {52, 53}      # betesmark och slåtteräng blir inte fält (antag
 BUFFER_CODES = {77, 314}     # skyddszoner längs vattendrag: bara cirka 6 m breda remsor, får inte odlas
 MIN_FIELD_WIDTH = 15.0       # m medelbredd (2 × yta / omkrets); smalare remsor blir gräs, inte fält
 ARM_WIDTH = 12.0             # m: delar av ett fält som är smalare än så klipps bort
+FARMLAND_REACH = 300.0       # m: mark utan fält hör till närmaste jordbruksblock inom detta avstånd
+NO_BUILD_WATER = 2.5         # m på var sida om diken och bäckar där man inte får bygga
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
@@ -371,7 +373,12 @@ def build(project, args):
         draw_polygon(dfarm, geom.buffer(FIELD_SHRINK), world, farm_img.width, farmland_id[block])
     draw_polygon(dfarm, farm.box, world, farm_img.width, 1)               # gården hör till startgården
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
-    binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), np.array(farm_img, dtype=np.uint8))
+    no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
+    farm_arr = extend_farmlands(np.array(farm_img, dtype=np.uint8), no_build, world, osm)
+    binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), farm_arr)
+    binfmt.paint_grle(str(data_dir / "infoLayer_placementCollision.grle"), no_build.astype(np.uint8))
+    print(f"Mark: {np.mean(farm_arr > 0):.0%} av kartan går att köpa, {np.mean(no_build):.0%} spärrad för bygge "
+          "(vägar, vatten, diken, järnväg)")
 
     # Konfiguration: fs25-empty-map:s filer, sedan våra farmlands, modDesc-text och översiktskarta.
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
@@ -496,6 +503,52 @@ def write_farmlands(path, order):
         '<?xml version="1.0" encoding="utf-8" standalone="no" ?>\n<map>\n'
         '    <farmlands densityMapFilename="maps/data/infoLayer_farmland.grle" numChannels="8" pricePerHa="60000">\n'
         + "\n".join(rows) + "\n    </farmlands>\n</map>\n", encoding="utf-8")
+
+
+def info_transform(world, res):
+    from rasterio.transform import from_origin
+    return from_origin(world.e0 - world.half, world.n0 + world.half, world.size / res, world.size / res)
+
+
+def no_build_mask(osm, world, res):
+    """Spärrat för byggen (placementCollision): vägar, vatten, diken och järnväg."""
+    from rasterio.features import rasterize
+    areas, roads, waterways, rail = osm[0], osm[1], osm[2], osm[3]
+    sq = world.square(-50)
+    geoms = [line.buffer(ROAD_STYLE[cls][1] / 2 + 1) for cls, line in roads if line.intersects(sq)]
+    geoms += [g for c, g in areas if c == "water" and g.intersects(sq)]
+    geoms += [line.buffer(NO_BUILD_WATER) for _, line in waterways if line.intersects(sq)]
+    geoms += [line.buffer(3) for line in rail if line.intersects(sq)]
+    return rasterize(((g, 1) for g in geoms), out_shape=(res, res), transform=info_transform(world, res),
+                     dtype="uint8") > 0
+
+
+def extend_farmlands(farm, no_build, world, osm):
+    """Mark utan fält läggs till närmaste markområde inom FARMLAND_REACH, så att man kan köpa
+    och bygga på gårdsplaner, ängar och skogsbryn. Vägar, vatten och tätorter blir inte köpbara."""
+    from rasterio.features import rasterize
+    res = farm.shape[0]
+    f = 2                                                   # grövre rutnät för spridningen
+    small = farm[::f, ::f].copy()
+    for _ in range(int(FARMLAND_REACH / (world.size / res * f))):
+        empty = small == 0
+        if not empty.any():
+            break
+        for src, dst in (((slice(1, None), slice(None)), (slice(None, -1), slice(None))),
+                         ((slice(None, -1), slice(None)), (slice(1, None), slice(None))),
+                         ((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+                         ((slice(None), slice(None, -1)), (slice(None), slice(1, None)))):
+            nb = small[src]
+            take = empty[dst] & (nb > 0)
+            small[dst][take] = nb[take]
+            empty[dst] &= ~take
+    grown = np.repeat(np.repeat(small, f, axis=0), f, axis=1)[:res, :res]
+    town = [g for c, g in osm[0] if c == "residential"]
+    blocked = no_build.copy()
+    if town:
+        blocked |= rasterize(((g, 1) for g in town), out_shape=farm.shape,
+                             transform=info_transform(world, res), dtype="uint8") > 0
+    return np.where(farm > 0, farm, np.where(blocked, 0, grown)).astype(np.uint8)
 
 
 def load_placements(project):
