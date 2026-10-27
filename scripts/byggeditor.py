@@ -163,7 +163,12 @@ def main():
                 return self.send(200, b'{"started": true}')
             self.send(409, b"{}")
 
-    server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
+    ThreadingHTTPServer.allow_reuse_address = True
+    try:
+        server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
+    except OSError:
+        sys.exit(f"Port {args.port} används redan, troligen av en editor som fortfarande körs. Stoppa den med "
+                 f"Ctrl+C i dess terminal eller med: pkill -f byggeditor.py  (eller välj en annan port med --port).")
     print(f"Byggeditorn körs. Öppna http://<serverns namn eller IP>:{args.port} i webbläsaren. Avsluta med Ctrl+C.")
     try:
         server.serve_forever()
