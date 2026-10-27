@@ -30,6 +30,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 let D, placed = [], selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = false;
+let modFilter = '';
+try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const map = L.map('map', {crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25, preferCanvas: false});
 const footLayer = L.layerGroup().addTo(map), placeLayer = L.layerGroup().addTo(map);
 const side = document.getElementById('side');
@@ -98,14 +100,23 @@ function nudge(dx, dy) { if (!selPlace) return; selPlace.x += dx; selPlace.y += 
 function remove() { if (!selPlace) return; placed = placed.filter(p => p !== selPlace); selPlace = null; save(); draw(); panel(); }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
 
+function modOptions() {
+  const counts = {};
+  for (const c of D.catalog) counts[c.mod] = (counts[c.mod] || 0) + 1;
+  if (modFilter && !counts[modFilter]) modFilter = '';
+  return `<option value="">Alla moddar (${D.catalog.length})</option>` + Object.keys(counts).sort()
+    .map(m => `<option value="${esc(m)}" ${m === modFilter ? 'selected' : ''}>${esc(m)} (${counts[m]})</option>`).join('');
+}
 function catalogList(b) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const list = D.catalog.filter(c => words.every(w => (c.name + ' ' + c.mod + ' ' + c.category + ' ' + c.file).toLowerCase().includes(w)))
-    .map(c => ({c, s: b ? fit(b, c) : 0})).sort((a, z) => a.s - z.s).slice(0, 60);
+  const list = D.catalog.filter(c => (!modFilter || c.mod === modFilter)
+      && words.every(w => (c.name + ' ' + c.mod + ' ' + c.category + ' ' + c.file).toLowerCase().includes(w)))
+    .map(c => ({c, s: b ? fit(b, c) + (c.guess ? 1000 : 0) : 0}))   // utan mått sist
+    .sort((a, z) => a.s - z.s || a.c.name.localeCompare(z.c.name)).slice(0, modFilter ? 1000 : 60);
   return list.map(({c, s}, i) => `<div class="item" data-i="${D.catalog.indexOf(c)}">
       ${c.thumb ? `<img src="${c.thumb}" loading="lazy" alt="">` : '<div class="ph"></div>'}
       <div><b>${esc(c.name)}</b><br><span class="fit">${c.guess ? 'mått saknas (10 × 10 m antaget)' : c.width + ' × ' + c.length + ' m'}</span>
-      ${b ? `<span class="muted"> · avvikelse ${s.toFixed(1)} m</span>` : ''}<br>
+      ${b && !c.guess ? `<span class="muted"> · avvikelse ${s.toFixed(1)} m</span>` : ''}<br>
       <span class="muted">${esc(c.mod)}</span></div></div>`).join('') || '<p class="muted">Inga träffar. Kör mod_katalog.py om katalogen är tom.</p>';
 }
 function panel() {
@@ -127,6 +138,7 @@ function panel() {
     h += `<h2>Verklig byggnad</h2><div>${esc(selFoot.type)}${selFoot.purpose ? ' · ' + esc(selFoot.purpose) : ''}${selFoot.main ? ' · huvudbyggnad' : ''}</div>
       <div class="muted">${selFoot.length} × ${selFoot.width} m, ${selFoot.area} m²</div>
       <h2>${selPlace ? 'Byt till' : 'Välj byggnad'}</h2>
+      <select id="mod" style="width:100%;margin-bottom:6px;padding:6px">${modOptions()}</select>
       <input type="search" id="q" placeholder="Sök i katalogen …" value="${esc(query)}">
       <div id="list">${catalogList(selFoot)}</div>`;
   } else if (!selPlace) {
@@ -143,6 +155,12 @@ function panel() {
   }
   document.getElementById('hs').onchange = e => { hideSmall = e.target.checked; draw(); };
   document.getElementById('oo').onchange = e => { onlyOpen = e.target.checked; draw(); };
+  const ms = document.getElementById('mod');
+  if (ms) ms.onchange = e => {
+    modFilter = e.target.value;
+    try { localStorage.setItem('byggeditor.mod', modFilter); } catch (err) {}
+    document.getElementById('list').innerHTML = catalogList(selFoot); bindList();
+  };
   const q = document.getElementById('q');
   if (q) q.oninput = e => { query = e.target.value; document.getElementById('list').innerHTML = catalogList(selFoot); bindList(); };
   bindList();
