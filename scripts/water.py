@@ -20,8 +20,10 @@ from rasterio.transform import from_origin
 from shapely.geometry import LineString
 
 STREAM_WIDTH = 2.4       # m, vattenremsans bredd i diken och bäckar
-STREAM_CUT = 2.0         # m på var sida om linjen där rännan sänks
-STREAM_DEPTH = 0.8       # m från vattenytan ned till rännans botten
+STREAM_CUT = 2.5         # m på var sida om linjen där rännan sänks
+STREAM_DEPTH = 0.7       # m från vattenytan ned till rännans botten
+WATER_ABOVE_BOTTOM = 0.3 # m vatten över dikesbottnen
+SNAP = 10.0              # m åt sidan där dikets botten söks (Topografi 10:s linjer har 4,5–9,5 m osäkerhet)
 STREAM_STEP = 4.0        # m mellan punkterna längs remsan
 LAKE_DEPTH = 1.5         # m från vattenytan ned till botten i sjöar och åar
 SHORE_SEARCH = 3         # px (á 2 m) runt en strandpunkt där lägsta terrängen blir vattenytan
@@ -54,12 +56,41 @@ def _polys(geom):
     return [g for part in getattr(geom, "geoms", []) for g in _polys(part)]
 
 
+def snap_lines(game, world, waterways):
+    """Flytta vattendragslinjerna till dikets botten i höjdmodellen: varje punkt till den
+    lägsta terrängen inom SNAP m åt sidan, med utjämnade flyttningar längs linjen."""
+    inside = world.square(10)
+    offsets = np.arange(-SNAP, SNAP + 0.1, 1.0)
+    out = []
+    for kind, line in waterways:
+        if not line.intersects(inside) or line.length < 2 * STREAM_STEP:
+            out.append((kind, line))
+            continue
+        d = np.linspace(0, line.length, max(int(line.length / STREAM_STEP) + 1, 2))
+        pts = np.array([line.interpolate(x).coords[0] for x in d])
+        tang = np.gradient(pts, axis=0)
+        tang /= np.maximum(np.linalg.norm(tang, axis=1, keepdims=True), 1e-6)
+        nrm = np.column_stack([-tang[:, 1], tang[:, 0]])
+        cand = pts[:, None, :] + nrm[:, None, :] * offsets[None, :, None]           # (punkter, förskjutningar, 2)
+        h = _sample(game, world, cand[..., 0], cand[..., 1]).astype(float)
+        h += np.abs(offsets)[None, :] * 0.01                                        # vid lika höjd: närmast
+        best = offsets[np.argmin(h, axis=1)]
+        ok = shapely.contains_xy(inside, pts[:, 0], pts[:, 1])
+        best[~ok] = 0.0
+        pad = np.pad(best, 2, mode="edge")
+        best = np.median(np.lib.stride_tricks.sliding_window_view(pad, 5), axis=1)  # bort med enstaka hopp
+        best = np.convolve(np.pad(best, 1, mode="edge"), np.ones(3) / 3, mode="valid")
+        out.append((kind, LineString(pts + nrm * best[:, None])))
+    return out
+
+
 def build_water(game, world, areas, waterways):
     """Sänker terrängen (game, spelets höjder) under vattnet och returnerar vattenytorna som
     [(namn, vertices [(e, n, höjd)], trianglar [(i, j, k)])]."""
     n = game.shape[0]
     transform, _upp = _grid(world, n)
     low = np.array(Image.fromarray(game.astype(np.float32)).filter(ImageFilter.MinFilter(2 * SHORE_SEARCH + 1)))
+    bed = np.array(Image.fromarray(game.astype(np.float32)).filter(ImageFilter.MinFilter(3)))   # dikesbotten
     inner = world.square(4)
     meshes, cut_shapes, lakes = [], [], []
 
@@ -98,7 +129,7 @@ def build_water(game, world, areas, waterways):
                 continue
             d = np.linspace(0, part.length, max(int(part.length / STREAM_STEP) + 1, 2))
             pts = np.array([part.interpolate(x).coords[0] for x in d])
-            h = _sample(low, world, pts[:, 0], pts[:, 1]).astype(float)
+            h = _sample(bed, world, pts[:, 0], pts[:, 1]).astype(float) + WATER_ABOVE_BOTTOM
             h = np.convolve(np.pad(h, 2, mode="edge"), np.ones(5) / 5, mode="valid")   # jämna ut längs linjen
             tang = np.gradient(pts, axis=0)
             tang /= np.maximum(np.linalg.norm(tang, axis=1, keepdims=True), 1e-6)
@@ -113,7 +144,7 @@ def build_water(game, world, areas, waterways):
                 faces += [(a, b, c), (b, e, c)]
             meshes.append((f"stream{i + 1:03d}_{len(meshes)}", verts, faces))
             for k in range(len(pts) - 1):
-                seg = LineString([pts[k], pts[k + 1]]).buffer(STREAM_CUT, cap_style="flat")
+                seg = LineString([pts[k], pts[k + 1]]).buffer(STREAM_CUT)
                 cut_shapes.append((seg, float(min(h[k], h[k + 1])) - STREAM_DEPTH))
 
     lake_mask = rasterize(((g, 1) for g in lakes if not g.is_empty), out_shape=game.shape, transform=transform,

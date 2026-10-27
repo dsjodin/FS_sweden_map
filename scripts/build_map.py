@@ -263,6 +263,7 @@ def build(project, args):
     game, base, real_max = make_dem(project, world, args.floor)
     print("Fält och marklager ...")
     osm, sources = load_land(project, world)
+    osm = osm[:2] + (water.snap_lines(game, world, osm[2]),) + osm[3:]   # vattendragen till dikets botten
     cut = obstacles(osm[1], osm[2], world, osm[0])
     fields = load_fields(project, world, cut)
     labels = ground_labels(osm, world, fields, cfg.weight_res)
