@@ -5,7 +5,8 @@ Laserskanningen mäter höjden på allt som står på marken. Höjd över mark f
 vi genom att dra av markhöjdmodellen. Det som är 2,5–45 m högt och där
 laserpulserna ger flera returer (pulsen tränger in genom grenverket, också
 utan löv) räknas som trädkrona. Tak och ledningar ger bara en retur och
-sorteras bort. Varje trädtopp (lokalt högsta punkt i krontaket) blir ett träd.
+sorteras bort. Träden sätts från de högsta punkterna i krontaket och nedåt, med
+6–10 m mellanrum beroende på höjd, så att en allé blir en rad träd.
 Det fungerar oavsett årstid och ger:
 
 - trädkronor i hela kartan, också utanför skogen: åkerholmar, trädrader längs
@@ -54,7 +55,6 @@ MIN_CROWN = 16.0         # m², mindre fläckar räknas som brus (ledningar, ens
 MULTI_SHARE = 0.25       # minst så stor andel flerreturer bland de höga träffarna runt en cell = vegetation
 POWERLINE_CLEAR = 5.0    # m på var sida om en kraftledning utan träd
 MIN_TREE = 3.0           # m, lägsta trädtopp som blir ett träd utanför skogen
-TALL = 20.0              # m: högre träd har bredare kronor, så topparna söks i ett större fönster
 MARGIN = 20.0            # m utanför kartrutan
 to_wgs = Transformer.from_crs("EPSG:3006", "EPSG:4326", always_xy=True).transform
 
@@ -153,18 +153,34 @@ def big_crowns(mask, transform):
     return rasterize(((g, 1) for g in keep), out_shape=mask.shape, transform=transform, dtype="uint8") > 0
 
 
+def tree_spacing(h):
+    """Minsta avstånd (m) mellan två träd, efter höjd: höga träd har bredare kronor."""
+    return np.where(h < 10, 6.0, np.where(h < 20, 8.0, 10.0))
+
+
 def treetops(chm, mask, transform):
-    """Ett träd per trädtopp: lokalt högsta punkt i ett utjämnat krontak, inom masken."""
+    """Träd i kronorna: högsta punkten först, sedan nästa högsta som ligger minst
+    tree_spacing(h) från alla redan valda, och så vidare. En allé blir en rad
+    med träd, en bred krona får flera träd."""
     filled = np.array(Image.fromarray(chm).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3)))
     smooth = (box_sum(filled) / 9.0).astype(np.float32)
-    smooth += np.random.default_rng(0).uniform(0, 1e-3, smooth.shape).astype(np.float32)   # bryt platåer
-    peak5 = smooth >= np.array(Image.fromarray(smooth).filter(ImageFilter.MaxFilter(5)))   # inget högre inom 4 m
-    peak7 = smooth >= np.array(Image.fromarray(smooth).filter(ImageFilter.MaxFilter(7)))   # inget högre inom 6 m
-    tops = mask & (smooth >= MIN_TREE) & np.where(smooth >= TALL, peak7, peak5)
-    rows, cols = np.nonzero(tops)
-    es, ns = transform * (cols + 0.5, rows + 0.5)
-    return [[round(float(e), 1), round(float(n), 1), round(float(smooth[r, c]), 1)]
-            for e, n, r, c in zip(es, ns, rows, cols)]
+    cand = mask & (smooth >= MIN_TREE)
+    rows, cols = np.nonzero(cand)
+    order = np.argsort(-smooth[rows, cols], kind="stable")
+    rows, cols = rows[order], cols[order]
+    spacing = tree_spacing(smooth[rows, cols])
+    taken = np.zeros(chm.shape, bool)
+    out = []
+    for r, c, sp in zip(rows, cols, spacing):
+        if taken[r, c]:
+            continue
+        rad = int(sp / CELL)
+        r0, r1, c0, c1 = max(r - rad, 0), min(r + rad + 1, chm.shape[0]), max(c - rad, 0), min(c + rad + 1, chm.shape[1])
+        yy, xx = np.ogrid[r0 - r:r1 - r, c0 - c:c1 - c]
+        taken[r0:r1, c0:c1] |= (yy * yy + xx * xx) * CELL * CELL < sp * sp
+        e, n = transform * (c + 0.5, r + 0.5)
+        out.append([round(float(e), 1), round(float(n), 1), round(float(smooth[r, c]), 1)])
+    return out
 
 
 def main():
