@@ -79,6 +79,7 @@ ROAD_STYLE = {  # vägklass från analyze_area -> (marklager, bredd i meter)
 MEADOW_CODES = {52, 53}      # betesmark och slåtteräng blir inte fält (antaget, se make_osm_fields.py)
 BUFFER_CODES = {77, 314}     # skyddszoner längs vattendrag: bara cirka 6 m breda remsor, får inte odlas
 MIN_FIELD_WIDTH = 15.0       # m medelbredd (2 × yta / omkrets); smalare remsor blir gräs, inte fält
+ARM_WIDTH = 12.0             # m: delar av ett fält som är smalare än så klipps bort
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
@@ -191,8 +192,10 @@ def load_fields(project, world, cut):
             continue
         geom = shape(f["geometry"]).buffer(0).buffer(-FIELD_SHRINK, join_style="mitre").intersection(inner)
         if geom.intersects(cut):
-            # Skär bort vägar och vatten, och rensa bort remsor smalare än 4 m längs kanterna.
-            geom = geom.difference(cut).buffer(-2, join_style="mitre").buffer(2, join_style="mitre")
+            geom = geom.difference(cut)          # skär bort vägar och vatten
+        # Ta bort smala armar och remsor (kantzoner längs diken), även när de sitter ihop med ett
+        # större fält. Hörnen behålls tack vare mitre.
+        geom = geom.buffer(-ARM_WIDTH / 2, join_style="mitre").buffer(ARM_WIDTH / 2, join_style="mitre")
         geom = geom.simplify(1.0, preserve_topology=True)
         parts = [geom] if geom.geom_type == "Polygon" else [g for g in getattr(geom, "geoms", []) if g.geom_type == "Polygon"]
         for part in parts:
