@@ -52,6 +52,17 @@ MapToPlay: `build/<namn>/<mod_name>.zip`. Den bygger på
 `third_party/fs25_empty_map` och innehåller terräng, fält, farmlands,
 marktexturer och översiktskarta. Se [docs/fs25_kartformat.md](docs/fs25_kartformat.md).
 
+### Träd ur laserdata och kontrollkarta
+
+```bash
+python scripts/laser_trees.py --map tysslinge    # krontak och träd utanför skogen ur Laserdata Skog
+python scripts/build_map.py --map tysslinge
+python scripts/kontrollkarta.py --map tysslinge  # build/tysslinge/kontrollkarta/index.html
+```
+
+Kontrollkartan visar ortofotot, laserns trädkronor, de utplacerade träden och
+Marktäckes skogar. Den innehåller ortofoto och ska bara visas på egna datorer.
+
 ### Bygga i spelet i stället för i GIANTS Editor
 
 Placera byggnader och objekt i spelets byggläge, kopiera sparfilen till
