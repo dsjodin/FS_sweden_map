@@ -59,6 +59,7 @@ import mapcfg  # noqa: E402
 from analyze_area import load_features  # noqa: E402
 import fs25_objects as obj  # noqa: E402
 import landcover  # noqa: E402
+import water  # noqa: E402
 
 # Marklager (namn i spelets standarduppsättning) i prioritetsordning: senare vinner.
 GROUND = [
@@ -291,6 +292,7 @@ def build(project, args):
     mill = obj.mill_site(roads, farm, mill_blocked, inner)
     sites = [farm] + ([mill] if mill else [])
     obj.flatten(game, world, sites)
+    water_meshes = water.build_water(game, world, areas, osm[2])   # sänker terrängen under vattnet
     if game.max() > gen_i3d.HEIGHT_SCALE or game.min() < 0:
         sys.exit("Höjderna hamnar utanför heightScale efter planering.")
     dem = np.round(game / gen_i3d.HEIGHT_SCALE * 65535).astype(np.uint16)
@@ -350,7 +352,7 @@ def build(project, args):
     gen_i3d.emit_layer_block = emit_layer_block
     i3d_path = maps_dir / cfg.i3d
     local_files = gen_i3d.build(cfg, str(i3d_path))
-    add_fields_to_i3d(i3d_path, fields, world, height_at, spawn_pt, trees, farm)
+    add_fields_to_i3d(i3d_path, fields, world, height_at, spawn_pt, trees, farm, water_meshes)
 
     # Data: fs25-empty-map skriver tomma lager, sedan ersätter vi med våra.
     gen_data.build(cfg, str(data_dir))
@@ -394,6 +396,8 @@ def build(project, args):
     owned_ha = sum(g.area for g in blocks[start_block]) / 10_000
     print(f"\n{title}: {len(fields)} fält i {len(order)} farmlands, terräng {base:.1f}–{real_max:.1f} m ö.h.")
     print(f"Startgård: block {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
+    print(f"Vatten: {sum(m[0].startswith('water') for m in water_meshes)} vattenytor, "
+          f"{sum(m[0].startswith('stream') for m in water_meshes)} diken och bäckar")
     print(f"Träd: {len(trees)}" + (f" (varav {len(loose)} utanför skogen)" if loose else "")
           + f". Spannmålsmottagning: {'ja' if mill else 'ingen ledig plats hittades'}")
     if placements:
@@ -443,7 +447,7 @@ def load_land(project, world):
     return (areas, roads, waterways, rail, buildings, places), sources
 
 
-def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm):
+def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm, water_meshes=()):
     import xml.etree.ElementTree as ET
     tree = ET.parse(i3d_path)
     root = tree.getroot()
@@ -478,6 +482,8 @@ def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm)
             sub(fua, "Attribute", name=nm, type=ty, value=val)
     obj.add_trees(root, trees, world, height_at, nid)
     obj.add_store_spawn(root, farm, world, nid)
+    files_cache = {}
+    water.add_to_i3d(root, water_meshes, world, nid, lambda f: obj.add_file(root, f, files_cache))
     ET.indent(root, space="  ")
     tree.write(i3d_path, encoding="iso-8859-1", xml_declaration=True)
 
