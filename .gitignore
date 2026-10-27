@@ -1,6 +1,8 @@
 # Rådata (OSM, Lantmäteriet) laddas ner med skripten och checkas inte in
 data/*/raw/
 data/*/lm/
+data/topografi10/
+*.gpkg
 *.tif
 *.laz
 __pycache__/
