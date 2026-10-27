@@ -63,6 +63,17 @@ python scripts/kontrollkarta.py --map tysslinge  # build/tysslinge/kontrollkarta
 Kontrollkartan visar ortofotot, laserns trädkronor, de utplacerade träden och
 Marktäckes skogar. Den innehåller ortofoto och ska bara visas på egna datorer.
 
+### Byggeditor: moddbyggnader på de verkliga byggnaderna
+
+```bash
+python scripts/mod_katalog.py data/mods          # katalog över byggnaderna i dina moddar
+python scripts/byggeditor.py --map tysslinge     # öppna http://ClaudeVM:8080 i webbläsaren
+```
+
+Klicka på en verklig byggnad (Topografi 10), välj en moddbyggnad, dra och vrid
+den. Placeringarna sparas i `maps/<namn>/byggnader.json` och blir byggnader i
+kartan när `build_map.py` körs (knappen "Bygg kartan"). Moddarna blir beroenden.
+
 ### Bygga i spelet i stället för i GIANTS Editor
 
 Placera byggnader och objekt i spelets byggläge, kopiera sparfilen till

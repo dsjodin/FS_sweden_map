@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="sv"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Byggeditor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root { --bg: #f4f2ec; --panel: #fff; --fg: #1f2421; --muted: #6a706b; --line: #ddd8cc; --accent: #2f6b3a; --sel: #1d6fd6; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #1b1f1c; --panel: #252b27; --fg: #e9ece8; --muted: #a2aaa3; --line: #38403a; --accent: #7fc48c; --sel: #5aa2ff; } }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  #app { display: grid; grid-template-columns: 1fr 360px; height: 100%; }
+  @media (max-width: 800px) { #app { grid-template-columns: 1fr; grid-template-rows: 60% 40%; } }
+  #map { background: #2a2f2b; }
+  #side { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 12px 14px; }
+  h2 { font-size: 15px; margin: 4px 0 8px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  input[type=search] { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .item { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; cursor: pointer; }
+  .item:hover { border-color: var(--accent); }
+  .item img, .item .ph { width: 64px; height: 64px; object-fit: contain; background: #0001; border-radius: 4px; }
+  .fit { color: var(--accent); font-weight: 600; }
+  pre { white-space: pre-wrap; font-size: 11px; max-height: 260px; overflow: auto; background: var(--bg); padding: 6px; border-radius: 6px; }
+  .stats { font-size: 12px; margin-bottom: 8px; }
+  kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 11px; }
+</style></head>
+<body><div id="app"><div id="map"></div><div id="side"></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+let D, placed = [], selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = false;
+const map = L.map('map', {crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25, preferCanvas: false});
+const footLayer = L.layerGroup().addTo(map), placeLayer = L.layerGroup().addTo(map);
+const side = document.getElementById('side');
+const ll = (x, y) => [y, x];   // meter österut/norrut -> Leaflet
+
+function corners(p) {           // rot = spelets y-rotation: lokal x (bredd) pekar rot grader moturs från öster
+  const r = p.rot * Math.PI / 180, ux = [Math.cos(r), Math.sin(r)], uz = [Math.sin(r), -Math.cos(r)];
+  return [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, b]) =>
+    ll(p.x + ux[0] * a * p.w / 2 + uz[0] * b * p.l / 2, p.y + ux[1] * a * p.w / 2 + uz[1] * b * p.l / 2));
+}
+function fit(b, c) {            // lägre = bättre: jämför långsida och kortsida
+  const a1 = Math.max(c.width, c.length), a2 = Math.min(c.width, c.length);
+  return Math.abs(a1 - b.length) + Math.abs(a2 - b.width);
+}
+function startRot(b, c) {       // längsta sidan i modellen längs konturens långsida
+  return ((c.length >= c.width ? b.angle + 90 : b.angle) + 540) % 360 - 180;
+}
+let saveTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => fetch('api/save', {method: 'POST', body: JSON.stringify(placed)}), 400);
+  drawStats();
+}
+function placeOn(b, c) {
+  placed = placed.filter(p => p.ref !== b.id);
+  const p = {ref: b.id, file: c.path, mod: c.mod, name: c.name, thumb: c.thumb, w: c.width, l: c.length,
+             x: b.cx, y: b.cy, rot: startRot(b, c)};
+  placed.push(p); selPlace = p; save(); draw(); panel();
+}
+function draw() {
+  footLayer.clearLayers(); placeLayer.clearLayers();
+  const done = new Set(placed.map(p => p.ref));
+  for (const b of D.buildings) {
+    if (hideSmall && b.area < 30) continue;
+    if (onlyOpen && done.has(b.id)) continue;
+    const isSel = selFoot && selFoot.id === b.id;
+    L.polygon(b.poly.map(([x, y]) => ll(x, y)), {color: isSel ? '#ffd400' : done.has(b.id) ? '#3fd16b' : '#ff4b4b',
+      weight: isSel ? 3 : 1.5, fillOpacity: 0.08})
+      .on('click', e => { L.DomEvent.stop(e); selFoot = b; selPlace = placed.find(p => p.ref === b.id) || null; draw(); panel(); })
+      .addTo(footLayer);
+  }
+  for (const p of placed) {
+    const isSel = p === selPlace;
+    const poly = L.polygon(corners(p), {color: isSel ? '#1d6fd6' : '#3a8dde', weight: isSel ? 3 : 1.5, fillOpacity: 0.35})
+      .bindTooltip(p.name, {sticky: true}).addTo(placeLayer);
+    poly.on('click', L.DomEvent.stop);
+    poly.on('mousedown', e => {
+      L.DomEvent.stop(e); selPlace = p; selFoot = D.buildings.find(b => b.id === p.ref) || null;
+      map.dragging.disable();
+      const start = e.latlng, x0 = p.x, y0 = p.y;
+      const move = ev => { p.x = x0 + ev.latlng.lng - start.lng; p.y = y0 + ev.latlng.lat - start.lat; poly.setLatLngs(corners(p)); };
+      const up = () => { map.off('mousemove', move); map.off('mouseup', up); map.dragging.enable(); save(); draw(); panel(); };
+      map.on('mousemove', move); map.on('mouseup', up);
+    });
+    // Riktningspil: lokal z (längd) åt "fram"
+    const r = p.rot * Math.PI / 180;
+    L.polyline([ll(p.x, p.y), ll(p.x + Math.sin(r) * p.l / 2, p.y - Math.cos(r) * p.l / 2)], {color: '#fff', weight: 2, interactive: false}).addTo(placeLayer);
+  }
+}
+function drawStats() {
+  const el = document.getElementById('stats');
+  if (el) el.textContent = `${placed.length} byggnader placerade av ${D.buildings.filter(b => b.area >= 30).length} konturer över 30 m²`;
+}
+function rotate(d) { if (!selPlace) return; selPlace.rot = ((selPlace.rot + d + 540) % 360) - 180; save(); draw(); panel(); }
+function nudge(dx, dy) { if (!selPlace) return; selPlace.x += dx; selPlace.y += dy; save(); draw(); }
+function remove() { if (!selPlace) return; placed = placed.filter(p => p !== selPlace); selPlace = null; save(); draw(); panel(); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
+
+function catalogList(b) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const list = D.catalog.filter(c => words.every(w => (c.name + ' ' + c.mod + ' ' + c.category + ' ' + c.file).toLowerCase().includes(w)))
+    .map(c => ({c, s: b ? fit(b, c) : 0})).sort((a, z) => a.s - z.s).slice(0, 60);
+  return list.map(({c, s}, i) => `<div class="item" data-i="${D.catalog.indexOf(c)}">
+      ${c.thumb ? `<img src="${c.thumb}" loading="lazy" alt="">` : '<div class="ph"></div>'}
+      <div><b>${esc(c.name)}</b><br><span class="fit">${c.width} × ${c.length} m</span>
+      ${b ? `<span class="muted"> · avvikelse ${s.toFixed(1)} m</span>` : ''}<br>
+      <span class="muted">${esc(c.mod)}</span></div></div>`).join('') || '<p class="muted">Inga träffar. Kör mod_katalog.py om katalogen är tom.</p>';
+}
+function panel() {
+  let h = `<h2>${esc(D.title)} – byggeditor</h2><div id="stats" class="stats"></div>
+    <div class="row"><label><input type="checkbox" id="hs" ${hideSmall ? 'checked' : ''}> dölj under 30 m²</label>
+    <label><input type="checkbox" id="oo" ${onlyOpen ? 'checked' : ''}> bara utan byggnad</label></div>`;
+  if (selPlace) {
+    h += `<h2>${esc(selPlace.name)}</h2><div class="muted">${selPlace.w} × ${selPlace.l} m · vridning ${selPlace.rot.toFixed(0)}°</div>
+      <div class="row"><button data-r="-90">↺ 90°</button><button data-r="-5">↺ 5°</button><button data-r="-1">↺ 1°</button>
+      <button data-r="1">↻ 1°</button><button data-r="5">↻ 5°</button><button data-r="90">↻ 90°</button></div>
+      <div class="row"><button id="del">Ta bort</button></div>
+      <p class="muted">Dra byggnaden med musen. <kbd>Q</kbd>/<kbd>E</kbd> vrider 1° (med <kbd>Shift</kbd> 15°),
+      piltangenterna flyttar 0,5 m, <kbd>Delete</kbd> tar bort. Den vita linjen visar framsidan.</p>`;
+  }
+  if (selFoot) {
+    h += `<h2>Verklig byggnad</h2><div>${esc(selFoot.type)}${selFoot.purpose ? ' · ' + esc(selFoot.purpose) : ''}${selFoot.main ? ' · huvudbyggnad' : ''}</div>
+      <div class="muted">${selFoot.length} × ${selFoot.width} m, ${selFoot.area} m²</div>
+      <h2>${selPlace ? 'Byt till' : 'Välj byggnad'}</h2>
+      <input type="search" id="q" placeholder="Sök i katalogen …" value="${esc(query)}">
+      <div id="list">${catalogList(selFoot)}</div>`;
+  } else if (!selPlace) {
+    h += `<p>Klicka på en <b style="color:#ff4b4b">röd</b> kontur för att välja en byggnad till den.
+      <b style="color:#3fd16b">Gröna</b> har redan en byggnad.</p>`;
+  }
+  h += `<h2>Bygg</h2><div class="row"><button class="primary" id="build">Bygg kartan</button></div><pre id="log" hidden></pre>`;
+  side.innerHTML = h; drawStats();
+  side.querySelectorAll('[data-r]').forEach(b => b.onclick = () => rotate(+b.dataset.r));
+  const del = document.getElementById('del'); if (del) del.onclick = remove;
+  document.getElementById('hs').onchange = e => { hideSmall = e.target.checked; draw(); };
+  document.getElementById('oo').onchange = e => { onlyOpen = e.target.checked; draw(); };
+  const q = document.getElementById('q');
+  if (q) q.oninput = e => { query = e.target.value; document.getElementById('list').innerHTML = catalogList(selFoot); bindList(); };
+  bindList();
+  document.getElementById('build').onclick = startBuild;
+}
+function bindList() {
+  side.querySelectorAll('.item').forEach(el => el.onclick = () => placeOn(selFoot, D.catalog[+el.dataset.i]));
+}
+async function startBuild() {
+  await fetch('api/save', {method: 'POST', body: JSON.stringify(placed)});
+  await fetch('api/build', {method: 'POST'});
+  const log = document.getElementById('log'); log.hidden = false;
+  const poll = async () => {
+    const s = await (await fetch('api/build')).json();
+    const el = document.getElementById('log'); if (el) { el.hidden = false; el.textContent = s.log; el.scrollTop = 1e9; }
+    if (s.running) setTimeout(poll, 1500);
+  };
+  poll();
+}
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key, big = e.shiftKey;
+  if (k === 'q' || k === 'Q') rotate(big ? -15 : -1);
+  else if (k === 'e' || k === 'E') rotate(big ? 15 : 1);
+  else if (k === 'ArrowLeft') nudge(big ? -2 : -0.5, 0);
+  else if (k === 'ArrowRight') nudge(big ? 2 : 0.5, 0);
+  else if (k === 'ArrowUp') nudge(0, big ? 2 : 0.5);
+  else if (k === 'ArrowDown') nudge(0, big ? -2 : -0.5);
+  else if (k === 'Delete' || k === 'Backspace') remove();
+  else if (k === 'Escape') { selFoot = selPlace = null; draw(); panel(); }
+  else return;
+  e.preventDefault();
+});
+map.on('click', () => { selFoot = selPlace = null; draw(); panel(); });
+
+fetch('api/data').then(r => r.json()).then(d => {
+  D = d; placed = d.placed || [];
+  D.catalog.forEach(c => { if (c.thumb) c.thumb = 'img/' + c.thumb.split('/').pop(); });
+  const bases = {};
+  for (const bg of D.backgrounds) bases[bg.name] = L.imageOverlay(bg.file, [[-bg.half, -bg.half], [bg.half, bg.half]]);
+  bases['Ingen bakgrund'] = L.layerGroup();
+  Object.values(bases)[0].addTo(map);
+  L.control.layers(bases, {'Verkliga byggnader': footLayer, 'Placerade byggnader': placeLayer}, {collapsed: false}).addTo(map);
+  L.rectangle([[-D.half, -D.half], [D.half, D.half]], {color: '#fff', weight: 1, dashArray: '6 4', fill: false, interactive: false}).addTo(map);
+  map.fitBounds([[-D.half, -D.half], [D.half, D.half]]);
+  draw(); panel();
+});
+</script></body></html>

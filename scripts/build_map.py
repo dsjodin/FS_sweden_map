@@ -294,6 +294,8 @@ def build(project, args):
                                + [g for c, g in areas if c in ("forest", "water", "residential")] + buildings)
     mill = obj.mill_site(roads, farm, mill_blocked, inner)
     sites = [farm] + ([mill] if mill else [])
+    edited = load_editor_buildings(project, world)          # byggeditor.py: [(Site, placeable)]
+    sites += [site for site, _ in edited]
     obj.flatten(game, world, sites)
     water_meshes = water.build_water(game, world, areas, osm[2],   # sänker terrängen under vattnet
                                      [(ROAD_STYLE[c][1], ln) for c, ln in roads])
@@ -307,7 +309,8 @@ def build(project, args):
         x1, y1 = world.px(s_.e + s_.size / 2, s_.n - s_.size / 2, cfg.weight_res)
         labels[int(y0):int(y1), int(x0):int(x1)] = idx_yard
     spawn_pt = Point(farm.e - 15, farm.n + 38)   # framför gårdshuset
-    no_trees = unary_union([cut, field_union] + [s_.box.buffer(10) for s_ in sites])
+    no_trees = unary_union([cut, field_union] + [s_.box.buffer(2 if s_.name.startswith("byggnad") else 10)
+                                                 for s_ in sites])
     trees = obj.tree_points([g for c, g in areas if c == "forest"], no_trees, world.square(5))
     chm_path = project.lm / "laser" / "krontak.tif"
     if chm_path.exists():     # laser_trees.py: inga träd där Marktäckes skog saknar kronor (kalhyggen)
@@ -384,7 +387,8 @@ def build(project, args):
     # Konfiguration: fs25-empty-map:s filer, sedan våra farmlands, modDesc-text och översiktskarta.
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
     write_farmlands(maps_dir / "farmlands.xml", order)
-    placements = load_placements(project)
+    placements = load_placements(project) + [dict(pl, position=[pl["position"][0], site.height, pl["position"][2]])
+                                             for site, pl in edited]
     obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements)
     obj.write_fields_xml(maps_dir / "fields.xml", fields)
     obj.patch_map_xml(maps_dir / "map.xml")
@@ -410,7 +414,7 @@ def build(project, args):
     print(f"Träd: {len(trees)}" + (f" (varav {len(loose)} utanför skogen)" if loose else "")
           + f". Spannmålsmottagning: {'ja' if mill else 'ingen ledig plats hittades'}")
     if placements:
-        print(f"Egna placeringar från spelet: {len(placements)}")
+        print(f"Placerade byggnader och objekt (byggeditorn och spelet): {len(placements)}")
     print(f"Skrev {project.rel(zip_path)} ({zip_path.stat().st_size / 1e6:.1f} MB)")
 
 
@@ -550,6 +554,22 @@ def extend_farmlands(farm, no_build, world, osm):
         blocked |= rasterize(((g, 1) for g in town), out_shape=farm.shape,
                              transform=info_transform(world, res), dtype="uint8") > 0
     return np.where(farm > 0, farm, np.where(blocked, 0, grown)).astype(np.uint8)
+
+
+def load_editor_buildings(project, world):
+    """Byggnader från byggeditor.py (maps/<namn>/byggnader.json): marken planas under varje
+    byggnad, och den blir en placeable i kartan. Koordinaterna är meter från kartans mitt
+    (x österut, y norrut), rot är spelets y-rotation i grader."""
+    path = project.dir / "byggnader.json"
+    if not path.exists():
+        return []
+    out = []
+    for i, b in enumerate(json.loads(path.read_text(encoding="utf-8"))):
+        site = obj.Site(f"byggnad{i}", world.e0 + b["x"], world.n0 + b["y"], max(b["w"], b["l"]) + 2)
+        out.append((site, {"filename": b["file"], "position": [b["x"], 0.0, -b["y"]],
+                           "rotation": [0.0, b["rot"], 0.0], "mod": b.get("mod")}))
+    print(f"  Byggnader från byggeditorn: {len(out)}")
+    return out
 
 
 def load_placements(project):
