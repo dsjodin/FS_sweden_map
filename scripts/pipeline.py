@@ -40,7 +40,10 @@ STEPS = [
     ("hojd", ["fetch_heightmap.py"], True),
     ("hojd_total", ["fetch_heightmap.py", "--total"], True),
     ("dem", ["make_heightmap.py"], False),
+    ("marktacke", ["fetch_landcover.py", "--produkt", "marktacke"], True),
+    ("trad", ["laser_trees.py"], True),
     ("karta", ["build_map.py"], False),
+    ("kontroll", ["kontrollkarta.py"], False),
     ("ortofoto", ["fetch_orthophoto.py"], True),
 ]
 NAMES = [s[0] for s in STEPS]
@@ -69,7 +72,7 @@ def main():
         if needs_lm and not has_lm:
             skipped.append(name)
             continue
-        if name in ("dem", "karta") and not (project.lm / "hojd" / "dtm_area.tif").exists():
+        if name in ("dem", "trad", "karta", "kontroll") and not (project.lm / "hojd" / "dtm_area.tif").exists():
             skipped.append(name)
             continue
         print(f"\n=== {name}: {' '.join(cmd)} ===", flush=True)

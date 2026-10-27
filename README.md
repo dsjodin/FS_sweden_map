@@ -100,7 +100,10 @@ du vilka steg som körs.
 | hojd | `fetch_heightmap.py` | `data/<namn>/lm/hojd/dtm_area.tif` |
 | hojd_total | `fetch_heightmap.py --total` | `data/<namn>/lm/hojd/dtm_total.tif` |
 | dem | `make_heightmap.py` | `build/<namn>/data/dem.png` |
+| marktacke | `fetch_landcover.py --produkt marktacke` | `data/<namn>/lm/vektor/marktacke_<kommun>/` |
+| trad | `laser_trees.py` | `data/<namn>/lm/laser/krontak.tif` och `data/<namn>/lm/trad.json` |
 | karta | `build_map.py` | `build/<namn>/<mod_name>.zip`, färdig FS25-modd |
+| kontroll | `kontrollkarta.py` | `build/<namn>/kontrollkarta/index.html` |
 | ortofoto | `fetch_orthophoto.py` (med `--ortofoto`) | `data/<namn>/lm/ortofoto/ortofoto.tif` |
 
 Alla skript tar `--map <namn>`. Finns bara en karta används den
