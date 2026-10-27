@@ -160,6 +160,23 @@ def tree_points(forests, cut, inner, seed=7):
     return out
 
 
+def loose_trees(points, cut, inner, seed=9):
+    """Träd utanför skogen (från detect_trees.py): fullvuxna lövträd på givna platser."""
+    rng = np.random.default_rng(seed)
+    if not points:
+        return []
+    pts = np.array(points, dtype=float)
+    shapely.prepare(inner)
+    keep = shapely.contains_xy(inner, pts[:, 0], pts[:, 1])
+    if not cut.is_empty:
+        shapely.prepare(cut)
+        keep &= ~shapely.contains_xy(cut, pts[:, 0], pts[:, 1])
+    weights = np.array([w for *_, w in MATURE], dtype=float)
+    pick = rng.choice(len(MATURE), int(keep.sum()), p=weights / weights.sum())
+    return [(float(e), float(n), MATURE[k][1], f"{TREE_DIR}/{MATURE[k][0]}/{MATURE[k][1]}.i3d")
+            for (e, n), k in zip(pts[keep], pick)]
+
+
 # --- i3d-tillägg -------------------------------------------------------------------------------
 def add_file(root, filename, cache):
     if filename in cache:
@@ -253,7 +270,7 @@ def patch_map_xml(path):
     s = path.read_text(encoding="utf-8")
     extra = ('    <fields filename="maps/fields.xml" />\n'
              '    <shop filename="$data/store/ui/shop.xml" />\n'
-             '    <treeTypes maxNumTrees="20000" />\n')
+             '    <treeTypes maxNumTrees="25000" />\n')
     anchor = '    <farmlands filename="maps/farmlands.xml" />\n'
     if anchor not in s:
         raise ValueError("Hittar inte farmlands-raden i map.xml")

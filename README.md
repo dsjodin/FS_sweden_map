@@ -52,6 +52,18 @@ MapToPlay: `build/<namn>/<mod_name>.zip`. Den bygger på
 `third_party/fs25_empty_map` och innehåller terräng, fält, farmlands,
 marktexturer och översiktskarta. Se [docs/fs25_kartformat.md](docs/fs25_kartformat.md).
 
+### Träd utanför skogen ur ortofotot
+
+`scripts/detect_trees.py` hittar åkerholmar, trädrader och gårdsträd i
+ortofotot (kräver `fetch_orthophoto.py`). Trädpositionerna sparas i
+`data/<namn>/lm/ortofoto/trad.json` och används av `build_map.py`. Ortofotot
+lämnar aldrig servern, och modden innehåller inga bilder ur det.
+
+```bash
+python scripts/detect_trees.py --map tysslinge
+python scripts/build_map.py --map tysslinge
+```
+
 ### Bygga i spelet i stället för i GIANTS Editor
 
 Placera byggnader och objekt i spelets byggläge, kopiera sparfilen till

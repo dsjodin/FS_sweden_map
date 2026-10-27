@@ -16,7 +16,8 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
 - marktexturer: asfalt, grus, skogsmark, åkerjord och gräs
 - översiktskarta (PDA) ritad från samma data. Spelet visar den över dubbla
   kartytan, så den täcker också omgivningen runt kartan.
-- träd i skogarna, startgård med gårdshus, maskinhall och silo, en
+- träd i skogarna och, om detect_trees.py har körts, åkerholmar, trädrader och
+  gårdsträd som hittats i ortofotot. Startgård med gårdshus, maskinhall och silo, en
   spannmålsmottagning och plats för köpta fordon (scripts/fs25_objects.py)
 - fältens grödor vid nytt spel från skiftenas grödkoder (maps/fields.xml)
 - byggnader och objekt som du placerat i spelet och hämtat med
@@ -295,8 +296,14 @@ def build(project, args):
         x1, y1 = world.px(s_.e + s_.size / 2, s_.n - s_.size / 2, cfg.weight_res)
         labels[int(y0):int(y1), int(x0):int(x1)] = idx_yard
     spawn_pt = Point(farm.e - 15, farm.n + 38)   # framför gårdshuset
-    trees = obj.tree_points([g for c, g in areas if c == "forest"],
-                            unary_union([cut, field_union] + [s_.box.buffer(10) for s_ in sites]), world.square(5))
+    no_trees = unary_union([cut, field_union] + [s_.box.buffer(10) for s_ in sites])
+    trees = obj.tree_points([g for c, g in areas if c == "forest"], no_trees, world.square(5))
+    loose_path = project.lm / "ortofoto" / "trad.json"
+    loose = []
+    if loose_path.exists():   # åkerholmar, trädrader och gårdsträd ur ortofotot (detect_trees.py)
+        loose = obj.loose_trees(json.loads(loose_path.read_text(encoding="utf-8"))["points"],
+                                unary_union([no_trees] + buildings), world.square(5))
+        trees += loose
 
     # i3d: fs25-empty-map:s scen, med våra marklager och fält.
     weight_files = {name: f"data/{name}_weight.png" for name, _ in GROUND}
@@ -372,7 +379,8 @@ def build(project, args):
     owned_ha = sum(g.area for g in blocks[start_block]) / 10_000
     print(f"\n{title}: {len(fields)} fält i {len(order)} farmlands, terräng {base:.1f}–{real_max:.1f} m ö.h.")
     print(f"Startgård: block {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
-    print(f"Träd: {len(trees)}. Spannmålsmottagning: {'ja' if mill else 'ingen ledig plats hittades'}")
+    print(f"Träd: {len(trees)}" + (f" (varav {len(loose)} utanför skogen, från ortofotot)" if loose else "")
+          + f". Spannmålsmottagning: {'ja' if mill else 'ingen ledig plats hittades'}")
     if placements:
         print(f"Egna placeringar från spelet: {len(placements)}")
     print(f"Skrev {project.rel(zip_path)} ({zip_path.stat().st_size / 1e6:.1f} MB)")
