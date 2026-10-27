@@ -268,6 +268,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("folder", help="mapp med moddarna (zip-filer eller uppackade mappar)")
     parser.add_argument("--sok", nargs="*", help="ta bara med moddar vars namn innehåller något av orden")
+    parser.add_argument("--visa-ovriga", action="store_true", help="lista xml-filer som inte räknades som byggnader")
     args = parser.parse_args()
     folder = Path(args.folder).expanduser()
     mods = find_mods(folder)
@@ -300,6 +301,9 @@ def main():
                 data = z.read(name)
                 info = parse_placeable(data)
                 if info is None:
+                    if args.visa_ovriga:
+                        tag = first_tag(data.decode("utf-8", "replace")[:50000])
+                        print(f"    inte en byggnad: {name} (rotelement <{tag}>)")
                     continue
                 n_found += 1
                 info["size_from"] = "xml" if info["width"] else None
@@ -309,6 +313,8 @@ def main():
                         info["width"], info["length"], info["size_from"] = size[0], size[1], "i3d"
                 if info["name"].startswith("$l10n_"):
                     info["name"] = l10n.get(info["name"][6:], info["name"])
+                if not info["name"] or info["name"].startswith("$l10n_"):   # spelets egna textnycklar
+                    info["name"] = PurePosixPath(name).stem
                 img_name = find_image(z, name, info["image"])
                 thumb = None
                 if img_name:
