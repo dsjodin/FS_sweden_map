@@ -8,35 +8,70 @@
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
     --bg: #1b1f1c; --panel: #252b27; --fg: #e9ece8; --muted: #a2aaa3; --line: #38403a; --accent: #7fc48c; --sel: #5aa2ff; } }
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
-  #app { display: grid; grid-template-columns: 1fr 360px; height: 100%; }
+  #app { display: grid; grid-template-columns: 1fr 370px; height: 100%; }
   @media (max-width: 800px) { #app { grid-template-columns: 1fr; grid-template-rows: 60% 40%; } }
   #map { background: #2a2f2b; }
+  #map.drawing { cursor: crosshair; }
   #side { overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 12px 14px; }
-  h2 { font-size: 15px; margin: 4px 0 8px; }
+  h2 { font-size: 15px; margin: 10px 0 6px; }
   .muted { color: var(--muted); font-size: 12px; }
-  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; align-items: center; }
   button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.on { outline: 2px solid var(--sel); }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px; }
+  .tabs button.on { background: var(--accent); color: #fff; outline: none; }
+  select, input[type=number] { padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
   input[type=search] { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
   .item { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; cursor: pointer; }
   .item:hover { border-color: var(--accent); }
   .item img, .item .ph { width: 64px; height: 64px; object-fit: contain; background: #0001; border-radius: 4px; }
   .fit { color: var(--accent); font-weight: 600; }
   pre { white-space: pre-wrap; font-size: 11px; max-height: 260px; overflow: auto; background: var(--bg); padding: 6px; border-radius: 6px; }
-  .stats { font-size: 12px; margin-bottom: 8px; }
+  .stats { font-size: 12px; margin-bottom: 4px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
   kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 11px; }
 </style></head>
 <body><div id="app"><div id="map"></div><div id="side"></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-let D, placed = [], selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = false;
-let modFilter = '';
+// --- Tillstånd ----------------------------------------------------------------------------------
+let D, placed = [], drawings = [], mode = 'bygg';
+let selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = false, modFilter = '';
+let tool = null, current = null, selDraw = null;            // Måla mark: verktyg, pågående ritning, vald ritning
+let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null, showGen = false;
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
-const map = L.map('map', {crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25, preferCanvas: false});
-const footLayer = L.layerGroup().addTo(map), placeLayer = L.layerGroup().addTo(map);
+const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
+                    'skog': '#2e7d32', 'sudda vägar': '#e53935', 'inga träd': '#ff9800'};
+const AREA_HELP = {'gräs': 'gräs, inga fält eller träd', 'åker': 'nytt fält med eget markområde',
+                   'gårdsplan': 'grus, inga fält eller träd', 'asfaltyta': 'asfalt, inga fält eller träd',
+                   'skog': 'skogsmark och träd', 'sudda vägar': 'tar bort vägar, blir gräs',
+                   'inga träd': 'tar bort de automatiska träden, marken ändras inte'};
+const ROAD_TYPES = {'grusväg': '#e6d3a1', 'asfaltväg': '#30353a'};
+
+const map = L.map('map', {crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25});
+const genLayer = L.layerGroup(), footLayer = L.layerGroup().addTo(map), drawLayer = L.layerGroup().addTo(map);
+const placeLayer = L.layerGroup().addTo(map), treeLayer = L.layerGroup().addTo(map), editLayer = L.layerGroup().addTo(map);
+const canvas = L.canvas({padding: 0.5});
 const side = document.getElementById('side');
 const ll = (x, y) => [y, x];   // meter österut/norrut -> Leaflet
+const xy = latlng => [Math.round(latlng.lng * 10) / 10, Math.round(latlng.lat * 10) / 10];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 
+// --- Spara --------------------------------------------------------------------------------------
+let saveTimer, drawTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => fetch('api/save', {method: 'POST', body: JSON.stringify(placed)}), 400);
+  drawStats();
+}
+function saveDrawings() {
+  clearTimeout(drawTimer);
+  drawTimer = setTimeout(() => fetch('api/drawings', {method: 'POST', body: JSON.stringify(drawings)}), 400);
+  drawStats();
+}
+
+// --- Byggnader ----------------------------------------------------------------------------------
 function corners(p) {           // rot = spelets y-rotation: lokal x (bredd) pekar rot grader moturs från öster
   const r = p.rot * Math.PI / 180, ux = [Math.cos(r), Math.sin(r)], uz = [Math.sin(r), -Math.cos(r)];
   return [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, b]) =>
@@ -48,12 +83,6 @@ function fit(b, c) {            // lägre = bättre: jämför långsida och kort
 }
 function startRot(b, c) {       // längsta sidan i modellen längs konturens långsida
   return ((c.length >= c.width ? b.angle + 90 : b.angle) + 540) % 360 - 180;
-}
-let saveTimer;
-function save() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => fetch('api/save', {method: 'POST', body: JSON.stringify(placed)}), 400);
-  drawStats();
 }
 function doorOf(file) { return (D.doors && D.doors[file]) || 0; }
 function fixDoor(delta) {     // dörren sitter delta grader moturs från pilen: vrid alla av modellen, pilen står kvar
@@ -70,30 +99,97 @@ function placeOn(b, c) {
              x: b.cx, y: b.cy, rot: startRot(b, c)};
   placed.push(p); selPlace = p; save(); draw(); panel();
 }
+function rotate(d) { if (!selPlace) return; selPlace.rot = ((selPlace.rot + d + 540) % 360) - 180; save(); draw(); panel(); }
+function nudge(dx, dy) {
+  if (mode === 'bygg' && selPlace) { selPlace.x += dx; selPlace.y += dy; save(); draw(); }
+  if (mode === 'trad' && selDraw && selDraw.kind === 'träd') { selDraw.points[0][0] += dx; selDraw.points[0][1] += dy; saveDrawings(); draw(); }
+}
+function removePlace() { if (!selPlace) return; placed = placed.filter(p => p !== selPlace); selPlace = null; save(); draw(); panel(); }
+
+// --- Ritningar och träd -------------------------------------------------------------------------
+function colorOf(d) { return d.kind === 'väg' ? ROAD_TYPES[d.type] : AREA_TYPES[d.type] || '#fff'; }
+function startTool(t) { tool = t; current = null; selDraw = null; draw(); panel(); }
+function finishDrawing() {
+  if (!current) return;
+  const pts = current.points.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 0.5);
+  if ((current.kind === 'yta' && pts.length >= 3) || (current.kind === 'väg' && pts.length >= 2)) {
+    current.points = pts; drawings.push(current); selDraw = current; saveDrawings();
+  }
+  current = null; draw(); panel();
+}
+function removeDraw() {
+  if (!selDraw) return;
+  drawings = drawings.filter(d => d !== selDraw); selDraw = null; saveDrawings(); draw(); panel();
+}
+function dragHandle(latlng, onMove, onEnd) {   // flytta något med musen tills knappen släpps
+  map.dragging.disable();
+  const move = ev => onMove(ev.latlng);
+  const up = () => { map.off('mousemove', move); map.off('mouseup', up); map.dragging.enable(); onEnd(); };
+  map.on('mousemove', move); map.on('mouseup', up);
+}
+function treeRadius(d) { const m = /stage(\d+)/.exec(d.type); return 3 + (m ? +m[1] : 3); }
+function treeLabel(type) { const t = D.treeTypes.find(t => t.stage === type); return t ? t.label : type; }
+
+// --- Rita kartan --------------------------------------------------------------------------------
 function draw() {
-  footLayer.clearLayers(); placeLayer.clearLayers();
+  footLayer.clearLayers(); placeLayer.clearLayers(); drawLayer.clearLayers(); treeLayer.clearLayers(); editLayer.clearLayers();
   const done = new Set(placed.map(p => p.ref));
   for (const b of D.buildings) {
     if (hideSmall && b.area < 30) continue;
     if (onlyOpen && done.has(b.id)) continue;
     const isSel = selFoot && selFoot.id === b.id;
-    L.polygon(b.poly.map(([x, y]) => ll(x, y)), {color: isSel ? '#ffd400' : done.has(b.id) ? '#3fd16b' : '#ff4b4b',
-      weight: isSel ? 3 : 1.5, fillOpacity: 0.08})
-      .on('click', e => { L.DomEvent.stop(e); selFoot = b; selPlace = placed.find(p => p.ref === b.id) || null; draw(); panel(); })
-      .addTo(footLayer);
+    const poly = L.polygon(b.poly.map(([x, y]) => ll(x, y)), {color: isSel ? '#ffd400' : done.has(b.id) ? '#3fd16b' : '#ff4b4b',
+      weight: isSel ? 3 : 1.5, fillOpacity: 0.08, interactive: mode === 'bygg'}).addTo(footLayer);
+    poly.on('click', e => { L.DomEvent.stop(e); selFoot = b; selPlace = placed.find(p => p.ref === b.id) || null; draw(); panel(); });
+  }
+  for (const d of drawings) {
+    if (d.kind === 'träd') continue;
+    const isSel = d === selDraw, c = colorOf(d), dash = (d.type === 'sudda vägar' || d.type === 'inga träd') ? '6 4' : null;
+    const opts = {color: isSel ? '#1d6fd6' : c, weight: isSel ? 3 : 2, dashArray: dash, interactive: mode === 'mala'};
+    const shape = d.kind === 'yta'
+      ? L.polygon(d.points.map(p => ll(...p)), {...opts, fillColor: c, fillOpacity: 0.35})
+      : L.polyline(d.points.map(p => ll(...p)), {...opts, color: isSel ? '#1d6fd6' : c, weight: Math.max(4, d.width * 1.2), opacity: 0.9});
+    shape.bindTooltip(d.type + (d.kind === 'väg' ? `, ${d.width} m` : ''), {sticky: true}).addTo(drawLayer);
+    shape.on('click', e => {
+      L.DomEvent.stop(e);
+      if (tool) { map.fire('click', {latlng: e.latlng}); return; }   // ritar man vidare ovanpå en annan yta
+      selDraw = d; draw(); panel();
+    });
+  }
+  if (selDraw && selDraw.kind !== 'träd' && mode === 'mala') {     // flyttbara hörn
+    selDraw.points.forEach((p, i) => {
+      L.circleMarker(ll(...p), {radius: 6, color: '#1d6fd6', fillColor: '#fff', fillOpacity: 1, weight: 2}).addTo(editLayer)
+        .on('mousedown', e => { L.DomEvent.stop(e); dragHandle(e.latlng, ln => { selDraw.points[i] = xy(ln); draw(); }, () => { saveDrawings(); }); })
+        .on('click', L.DomEvent.stop);
+    });
+  }
+  if (current) {
+    const pts = current.points.map(p => ll(...p));
+    (current.kind === 'yta' ? L.polygon(pts, {color: '#1d6fd6', dashArray: '4 4', fillOpacity: 0.15, interactive: false})
+                            : L.polyline(pts, {color: '#1d6fd6', dashArray: '4 4', interactive: false})).addTo(editLayer);
+    pts.forEach(p => L.circleMarker(p, {radius: 4, color: '#1d6fd6', interactive: false}).addTo(editLayer));
+  }
+  for (const d of drawings) {
+    if (d.kind !== 'träd') continue;
+    const isSel = d === selDraw;
+    const m = L.circleMarker(ll(...d.points[0]), {radius: treeRadius(d), color: isSel ? '#1d6fd6' : '#0b3d0b', weight: isSel ? 3 : 1.5,
+      fillColor: '#3cb043', fillOpacity: 0.85, interactive: mode === 'trad'}).bindTooltip(treeLabel(d.type), {sticky: true}).addTo(treeLayer);
+    m.on('click', L.DomEvent.stop);
+    m.on('mousedown', e => {
+      L.DomEvent.stop(e); selDraw = d; tool = null;
+      dragHandle(e.latlng, ln => { d.points[0] = xy(ln); m.setLatLng(ln); }, () => { saveDrawings(); draw(); panel(); });
+    });
   }
   for (const p of placed) {
     const isSel = p === selPlace;
-    const poly = L.polygon(corners(p), {color: isSel ? '#1d6fd6' : '#3a8dde', weight: isSel ? 3 : 1.5, fillOpacity: 0.35})
-      .bindTooltip(p.name, {sticky: true}).addTo(placeLayer);
+    const poly = L.polygon(corners(p), {color: isSel ? '#1d6fd6' : '#3a8dde', weight: isSel ? 3 : 1.5, fillOpacity: 0.35,
+      interactive: mode === 'bygg'}).bindTooltip(p.name, {sticky: true}).addTo(placeLayer);
     poly.on('click', L.DomEvent.stop);
     poly.on('mousedown', e => {
       L.DomEvent.stop(e); selPlace = p; selFoot = D.buildings.find(b => b.id === p.ref) || null;
-      map.dragging.disable();
       const start = e.latlng, x0 = p.x, y0 = p.y;
-      const move = ev => { p.x = x0 + ev.latlng.lng - start.lng; p.y = y0 + ev.latlng.lat - start.lat; poly.setLatLngs(corners(p)); };
-      const up = () => { map.off('mousemove', move); map.off('mouseup', up); map.dragging.enable(); save(); draw(); panel(); };
-      map.on('mousemove', move); map.on('mouseup', up);
+      dragHandle(start, ln => { p.x = x0 + ln.lng - start.lng; p.y = y0 + ln.lat - start.lat; poly.setLatLngs(corners(p)); },
+                 () => { save(); draw(); panel(); });
     });
     // Pil mot dörren: modellens lokala +z vriden med dörrsidan för modellen (doorOf)
     const r = (p.rot + doorOf(p.file)) * Math.PI / 180, ax = Math.sin(r), ay = -Math.cos(r);
@@ -101,16 +197,23 @@ function draw() {
     L.polyline([ll(p.x, p.y), ll(...tip)], {color: '#ffd400', weight: 3, interactive: false}).addTo(placeLayer);
     L.circleMarker(ll(...tip), {radius: 4, color: '#ffd400', fillOpacity: 1, interactive: false}).addTo(placeLayer);
   }
+  document.getElementById('map').classList.toggle('drawing', !!tool);
+}
+function drawGenerated() {
+  genLayer.clearLayers();
+  if (!showGen) { map.removeLayer(genLayer); return; }
+  for (const [x, y] of D.genTrees)
+    L.circleMarker(ll(x, y), {renderer: canvas, radius: 2, stroke: false, fillColor: '#ff2d95', fillOpacity: 0.8, interactive: false}).addTo(genLayer);
+  genLayer.addTo(map);
 }
 function drawStats() {
   const el = document.getElementById('stats');
-  if (el) el.textContent = `${placed.length} byggnader placerade av ${D.buildings.filter(b => b.area >= 30).length} konturer över 30 m²`;
+  if (!el) return;
+  const nt = drawings.filter(d => d.kind === 'träd').length;
+  el.textContent = `${placed.length} byggnader, ${drawings.length - nt} ritade ytor och vägar, ${nt} utsatta träd`;
 }
-function rotate(d) { if (!selPlace) return; selPlace.rot = ((selPlace.rot + d + 540) % 360) - 180; save(); draw(); panel(); }
-function nudge(dx, dy) { if (!selPlace) return; selPlace.x += dx; selPlace.y += dy; save(); draw(); }
-function remove() { if (!selPlace) return; placed = placed.filter(p => p !== selPlace); selPlace = null; save(); draw(); panel(); }
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
 
+// --- Sidopanelen --------------------------------------------------------------------------------
 function modOptions() {
   const counts = {};
   for (const c of D.catalog) counts[c.mod] = (counts[c.mod] || 0) + 1;
@@ -124,15 +227,17 @@ function catalogList(b) {
       && words.every(w => (c.name + ' ' + c.mod + ' ' + c.category + ' ' + c.file).toLowerCase().includes(w)))
     .map(c => ({c, s: b ? fit(b, c) + (c.guess ? 1000 : 0) : 0}))   // utan mått sist
     .sort((a, z) => a.s - z.s || a.c.name.localeCompare(z.c.name)).slice(0, modFilter ? 1000 : 60);
-  return list.map(({c, s}, i) => `<div class="item" data-i="${D.catalog.indexOf(c)}">
+  return list.map(({c, s}) => `<div class="item" data-i="${D.catalog.indexOf(c)}">
       ${c.thumb ? `<img src="${c.thumb}" loading="lazy" alt="">` : '<div class="ph"></div>'}
       <div><b>${esc(c.name)}</b><br><span class="fit">${c.guess ? 'mått saknas (10 × 10 m antaget)' : c.width + ' × ' + c.length + ' m'}</span>
       ${b && !c.guess ? `<span class="muted"> · avvikelse ${s.toFixed(1)} m</span>` : ''}<br>
       <span class="muted">${esc(c.mod)}</span></div></div>`).join('') || '<p class="muted">Inga träffar. Kör mod_katalog.py om katalogen är tom.</p>';
 }
-function panel() {
-  let h = `<h2>${esc(D.title)} – byggeditor</h2><div id="stats" class="stats"></div>
-    <div class="row"><label><input type="checkbox" id="hs" ${hideSmall ? 'checked' : ''}> dölj under 30 m²</label>
+function treeOptions(sel) {
+  return D.treeTypes.map(t => `<option value="${t.stage}" ${t.stage === sel ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
+}
+function panelBygg() {
+  let h = `<div class="row"><label><input type="checkbox" id="hs" ${hideSmall ? 'checked' : ''}> dölj under 30 m²</label>
     <label><input type="checkbox" id="oo" ${onlyOpen ? 'checked' : ''}> bara utan byggnad</label></div>`;
   if (selPlace) {
     h += `<h2>${esc(selPlace.name)}</h2><div class="muted">vridning ${selPlace.rot.toFixed(0)}°</div>
@@ -149,45 +254,111 @@ function panel() {
       <div class="row"><button data-d="180">Mitt emot pilen</button><button data-d="90">90° till vänster om pilen</button>
       <button data-d="-90">90° till höger om pilen</button></div>
       <p class="muted">Dra byggnaden med musen. <kbd>Q</kbd>/<kbd>E</kbd> vrider 1° (med <kbd>Shift</kbd> 15°),
-      piltangenterna flyttar 0,5 m, <kbd>F</kbd> vänder 180°, <kbd>Delete</kbd> tar bort. Den gula pilen visar dörren.</p>`;
+      piltangenterna flyttar 0,5 m, <kbd>F</kbd> vänder 180°, <kbd>Delete</kbd> tar bort.</p>`;
   }
   if (selFoot) {
     h += `<h2>Verklig byggnad</h2><div>${esc(selFoot.type)}${selFoot.purpose && selFoot.purpose !== selFoot.type ? ' · ' + esc(selFoot.purpose.replace(selFoot.type + ';', '')) : ''}${selFoot.main ? ' · huvudbyggnad' : ''}</div>
       <div class="muted">${selFoot.length} × ${selFoot.width} m, ${selFoot.area} m²</div>
       <h2>${selPlace ? 'Byt till' : 'Välj byggnad'}</h2>
-      <select id="mod" style="width:100%;margin-bottom:6px;padding:6px">${modOptions()}</select>
+      <select id="mod" style="width:100%;margin-bottom:6px">${modOptions()}</select>
       <input type="search" id="q" placeholder="Sök i katalogen …" value="${esc(query)}">
       <div id="list">${catalogList(selFoot)}</div>`;
   } else if (!selPlace) {
     h += `<p>Klicka på en <b style="color:#ff4b4b">röd</b> kontur för att välja en byggnad till den.
       <b style="color:#3fd16b">Gröna</b> har redan en byggnad.</p>`;
   }
+  return h;
+}
+function panelMala() {
+  let h = `<h2>Rita yta</h2><div class="row"><select id="at">${Object.keys(AREA_TYPES).map(t =>
+      `<option ${t === areaType ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    <button id="ta" class="${tool === 'yta' ? 'on' : ''}">Rita yta</button></div>
+    <div class="muted"><span class="sw" style="background:${AREA_TYPES[areaType]}"></span>${AREA_HELP[areaType]}</div>
+    <h2>Rita väg</h2><div class="row"><select id="rt">${Object.keys(ROAD_TYPES).map(t =>
+      `<option ${t === roadType ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    bredd <input type="number" id="rw" min="2" max="15" step="0.5" value="${roadWidth}" style="width:60px"> m
+    <button id="tv" class="${tool === 'väg' ? 'on' : ''}">Rita väg</button></div>
+    <p class="muted">Klicka punkt för punkt i kartan. Dubbelklicka eller tryck <kbd>Enter</kbd> för att avsluta,
+    <kbd>Backspace</kbd> tar bort senaste punkten, <kbd>Esc</kbd> avbryter. Ytor tar över det som fanns där,
+    i den ordning de ritas.</p>`;
+  if (selDraw && selDraw.kind !== 'träd') {
+    h += `<h2>Vald ${selDraw.kind}</h2><div class="row">`;
+    if (selDraw.kind === 'yta') {
+      h += `<select id="st">${Object.keys(AREA_TYPES).map(t => `<option ${t === selDraw.type ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+    } else {
+      h += `<select id="st">${Object.keys(ROAD_TYPES).map(t => `<option ${t === selDraw.type ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        bredd <input type="number" id="sw" min="2" max="15" step="0.5" value="${selDraw.width}" style="width:60px"> m`;
+    }
+    h += `<button id="dd">Ta bort</button></div><p class="muted">Dra i de blå hörnen för att ändra formen.</p>`;
+  }
+  return h;
+}
+function panelTrad() {
+  if (!treeType && D.treeTypes.length) treeType = D.treeTypes[0].stage;
+  let h = `<h2>Sätt ut träd</h2><div class="row"><select id="tt">${treeOptions(treeType)}</select>
+    <button id="tp" class="${tool === 'träd' ? 'on' : ''}">Sätt ut</button></div>
+    <p class="muted">Klicka i kartan för att sätta ett träd. Dra ett träd för att flytta det. Högre storlek = större träd.
+    Gran och tall saknas tills vi vet vad de heter i spelet. Vill du ta bort automatiska träd: rita en yta
+    <b>inga träd</b> under Måla mark.</p>
+    <div class="row"><label><input type="checkbox" id="sg" ${showGen ? 'checked' : ''}> visa träd från senaste bygget
+    (${D.genTrees.length})</label></div>`;
+  if (selDraw && selDraw.kind === 'träd') {
+    h += `<h2>Valt träd</h2><div class="row"><select id="tc">${treeOptions(selDraw.type)}</select>
+      <button id="dt">Ta bort</button></div><p class="muted">Piltangenterna flyttar 0,5 m, <kbd>Delete</kbd> tar bort.</p>`;
+  }
+  return h;
+}
+function panel() {
+  let h = `<div class="tabs"><button data-m="bygg" class="${mode === 'bygg' ? 'on' : ''}">Byggnader</button>
+    <button data-m="mala" class="${mode === 'mala' ? 'on' : ''}">Måla mark</button>
+    <button data-m="trad" class="${mode === 'trad' ? 'on' : ''}">Träd</button></div>
+    <div id="stats" class="stats"></div>`;
+  h += mode === 'bygg' ? panelBygg() : mode === 'mala' ? panelMala() : panelTrad();
   h += `<h2>Bygg</h2><div class="row"><button class="primary" id="build" ${building ? 'disabled' : ''}>
       ${building ? 'Bygger …' : 'Bygg kartan'}</button></div><pre id="log" ${buildLog ? '' : 'hidden'}>${esc(buildLog)}</pre>`;
   side.innerHTML = h; drawStats();
+  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
+  side.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
+    mode = b.dataset.m; tool = null; current = null; selDraw = null; selFoot = null; selPlace = null;
+    map.doubleClickZoom.enable(); draw(); panel();
+  });
+  // Byggnader
   side.querySelectorAll('[data-r]').forEach(b => b.onclick = () => rotate(+b.dataset.r));
   side.querySelectorAll('[data-d]').forEach(b => b.onclick = () => fixDoor(+b.dataset.d));
-  const del = document.getElementById('del'); if (del) del.onclick = remove;
-  for (const [id, key] of [['pw', 'w'], ['pl', 'l']]) {
-    const el = document.getElementById(id);
-    if (el) el.onchange = e => { const v = parseFloat(e.target.value); if (v > 0) { selPlace[key] = v; save(); draw(); } };
-  }
-  document.getElementById('hs').onchange = e => { hideSmall = e.target.checked; draw(); };
-  document.getElementById('oo').onchange = e => { onlyOpen = e.target.checked; draw(); };
-  const ms = document.getElementById('mod');
-  if (ms) ms.onchange = e => {
+  on('del', 'onclick', removePlace);
+  for (const [id, key] of [['pw', 'w'], ['pl', 'l']])
+    on(id, 'onchange', e => { const v = parseFloat(e.target.value); if (v > 0) { selPlace[key] = v; save(); draw(); } });
+  on('hs', 'onchange', e => { hideSmall = e.target.checked; draw(); });
+  on('oo', 'onchange', e => { onlyOpen = e.target.checked; draw(); });
+  on('mod', 'onchange', e => {
     modFilter = e.target.value;
     try { localStorage.setItem('byggeditor.mod', modFilter); } catch (err) {}
     document.getElementById('list').innerHTML = catalogList(selFoot); bindList();
-  };
-  const q = document.getElementById('q');
-  if (q) q.oninput = e => { query = e.target.value; document.getElementById('list').innerHTML = catalogList(selFoot); bindList(); };
+  });
+  on('q', 'oninput', e => { query = e.target.value; document.getElementById('list').innerHTML = catalogList(selFoot); bindList(); });
   bindList();
+  // Måla mark
+  on('at', 'onchange', e => { areaType = e.target.value; panel(); });
+  on('rt', 'onchange', e => { roadType = e.target.value; });
+  on('rw', 'onchange', e => { roadWidth = parseFloat(e.target.value) || 4; });
+  on('ta', 'onclick', () => { map.doubleClickZoom.disable(); startTool('yta'); });
+  on('tv', 'onclick', () => { map.doubleClickZoom.disable(); startTool('väg'); });
+  on('st', 'onchange', e => { selDraw.type = e.target.value; saveDrawings(); draw(); });
+  on('sw', 'onchange', e => { selDraw.width = parseFloat(e.target.value) || selDraw.width; saveDrawings(); draw(); });
+  on('dd', 'onclick', removeDraw);
+  // Träd
+  on('tt', 'onchange', e => { treeType = e.target.value; });
+  on('tp', 'onclick', () => startTool(tool === 'träd' ? null : 'träd'));
+  on('tc', 'onchange', e => { selDraw.type = e.target.value; selDraw.art = D.treeTypes.find(t => t.stage === selDraw.type).art; saveDrawings(); draw(); });
+  on('dt', 'onclick', removeDraw);
+  on('sg', 'onchange', e => { showGen = e.target.checked; drawGenerated(); });
   document.getElementById('build').onclick = startBuild;
 }
 function bindList() {
   side.querySelectorAll('.item').forEach(el => el.onclick = () => placeOn(selFoot, D.catalog[+el.dataset.i]));
 }
+
+// --- Bygga kartan -------------------------------------------------------------------------------
 let building = false, buildLog = '';
 function showBuild() {
   const el = document.getElementById('log'), btn = document.getElementById('build');
@@ -198,6 +369,7 @@ async function startBuild() {
   building = true; buildLog = 'Sparar och startar bygget. Det tar en till två minuter …\n'; showBuild();
   try {
     await fetch('api/save', {method: 'POST', body: JSON.stringify(placed)});
+    await fetch('api/drawings', {method: 'POST', body: JSON.stringify(drawings)});
     const r = await fetch('api/build', {method: 'POST'});
     if (!r.ok) buildLog += 'Ett bygge pågår redan, visar dess logg.\n';
   } catch (e) {
@@ -210,34 +382,59 @@ async function startBuild() {
     } catch (e) { buildLog += '.'; }
     showBuild();
     if (building) setTimeout(poll, 1500);
+    else fetch('api/data').then(r => r.json()).then(d => { D.genTrees = d.genTrees; drawGenerated(); if (mode === 'trad') panel(); });
   };
   setTimeout(poll, 800);
 }
+
+// --- Mus och tangentbord ------------------------------------------------------------------------
+map.on('click', e => {
+  if (mode === 'mala' && (tool === 'yta' || tool === 'väg')) {
+    if (!current) current = tool === 'yta' ? {kind: 'yta', type: areaType, points: []}
+                                           : {kind: 'väg', type: roadType, width: roadWidth, points: []};
+    current.points.push(xy(e.latlng)); draw(); return;
+  }
+  if (mode === 'trad' && tool === 'träd' && treeType) {
+    const t = D.treeTypes.find(t => t.stage === treeType);
+    const d = {kind: 'träd', type: t.stage, art: t.art, points: [xy(e.latlng)]};
+    drawings.push(d); selDraw = d; saveDrawings(); draw(); panel(); return;
+  }
+  selFoot = selPlace = selDraw = null; draw(); panel();
+});
+map.on('dblclick', () => { if (current) { finishDrawing(); tool = null; map.doubleClickZoom.enable(); panel(); } });
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;   // inte när man skriver i sök- eller måttfälten
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   const k = e.key, big = e.shiftKey;
-  if (k === 'q' || k === 'Q') rotate(big ? -15 : -1);
-  else if (k === 'e' || k === 'E') rotate(big ? 15 : 1);
-  else if (k === 'ArrowLeft') nudge(big ? -2 : -0.5, 0);
+  if (current) {
+    if (k === 'Enter') { finishDrawing(); tool = null; map.doubleClickZoom.enable(); panel(); }
+    else if (k === 'Backspace') { current.points.pop(); draw(); }
+    else if (k === 'Escape') { current = null; tool = null; map.doubleClickZoom.enable(); draw(); panel(); }
+    else return;
+    e.preventDefault(); return;
+  }
+  if (k === 'ArrowLeft') nudge(big ? -2 : -0.5, 0);
   else if (k === 'ArrowRight') nudge(big ? 2 : 0.5, 0);
   else if (k === 'ArrowUp') nudge(0, big ? 2 : 0.5);
   else if (k === 'ArrowDown') nudge(0, big ? -2 : -0.5);
-  else if (k === 'Delete' || k === 'Backspace') remove();
-  else if (k === 'f' || k === 'F') rotate(180);
-  else if (k === 'Escape') { selFoot = selPlace = null; draw(); panel(); }
+  else if (k === 'Delete' || k === 'Backspace') { if (mode === 'bygg') removePlace(); else removeDraw(); }
+  else if (mode === 'bygg' && (k === 'q' || k === 'Q')) rotate(big ? -15 : -1);
+  else if (mode === 'bygg' && (k === 'e' || k === 'E')) rotate(big ? 15 : 1);
+  else if (mode === 'bygg' && (k === 'f' || k === 'F')) rotate(180);
+  else if (k === 'Escape') { selFoot = selPlace = selDraw = null; tool = null; draw(); panel(); }
   else return;
   e.preventDefault();
 });
-map.on('click', () => { selFoot = selPlace = null; draw(); panel(); });
 
 fetch('api/data').then(r => r.json()).then(d => {
-  D = d; placed = d.placed || []; D.doors = d.doors || {};
+  D = d; placed = d.placed || []; drawings = d.drawings || []; D.doors = d.doors || {};
+  D.genTrees = d.genTrees || []; D.treeTypes = d.treeTypes || [];
   D.catalog.forEach(c => { if (c.thumb) c.thumb = 'img/' + c.thumb.split('/').pop(); });
   const bases = {};
   for (const bg of D.backgrounds) bases[bg.name] = L.imageOverlay(bg.file, [[-bg.half, -bg.half], [bg.half, bg.half]]);
   bases['Ingen bakgrund'] = L.layerGroup();
   Object.values(bases)[0].addTo(map);
-  L.control.layers(bases, {'Verkliga byggnader': footLayer, 'Placerade byggnader': placeLayer}, {collapsed: false}).addTo(map);
+  L.control.layers(bases, {'Verkliga byggnader': footLayer, 'Ritade ytor och vägar': drawLayer,
+    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer}, {collapsed: false}).addTo(map);
   L.rectangle([[-D.half, -D.half], [D.half, D.half]], {color: '#fff', weight: 1, dashArray: '6 4', fill: false, interactive: false}).addTo(map);
   map.fitBounds([[-D.half, -D.half], [D.half, D.half]]);
   draw(); panel();

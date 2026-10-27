@@ -60,6 +60,7 @@ from analyze_area import load_features  # noqa: E402
 import fs25_objects as obj  # noqa: E402
 import landcover  # noqa: E402
 import water  # noqa: E402
+import drawings as drawn  # noqa: E402
 
 # Marklager (namn i spelets standarduppsättning) i prioritetsordning: senare vinner.
 GROUND = [
@@ -223,8 +224,9 @@ def surrounding_fields(project, world):
     return out
 
 
-def ground_labels(osm, world, fields, res):
-    """Etikettbild (index i GROUND) för marklagren, 1 pixel per meter."""
+def ground_labels(osm, world, fields, res, overrides=()):
+    """Etikettbild (index i GROUND) för marklagren, 1 pixel per meter. overrides = [(marklager, yta)]
+    från byggeditorns ritningar målas över fält och skog, före vägarna."""
     areas, roads = osm[0], osm[1]
     img = Image.new("L", (res, res), 0)
     d = ImageDraw.Draw(img)
@@ -239,6 +241,8 @@ def ground_labels(osm, world, fields, res):
             draw_polygon(d, geom, world, res, idx["gravelSmall01"], idx["grass01"])
     for geom, _, _ in fields:
         draw_polygon(d, geom.buffer(FIELD_SHRINK), world, res, idx["mudDark01"])
+    for layer, geom in overrides:
+        draw_polygon(d, geom, world, res, idx[layer], idx[layer])
     for layer in ("gravel01", "asphalt01"):  # grus först, asfalt överst
         for cls, line in roads:
             name, width = ROAD_STYLE[cls]
@@ -266,9 +270,15 @@ def build(project, args):
     print("Fält och marklager ...")
     osm, sources = load_land(project, world)
     osm = osm[:2] + (water.snap_lines(game, world, osm[2]),) + osm[3:]   # vattendragen till dikets botten
+    drawings = drawn.load(project, world)                   # byggeditorns "Måla mark"
+    if drawings:
+        print(f"  Ritningar från byggeditorn: {sum(d['kind'] == 'yta' for d in drawings)} ytor, "
+              f"{sum(d['kind'] == 'väg' for d in drawings)} vägar")
+    osm = drawn.apply_land(osm, drawings, ROAD_STYLE)
     cut = obstacles(osm[1], osm[2], world, osm[0])
-    fields = load_fields(project, world, cut)
-    labels = ground_labels(osm, world, fields, cfg.weight_res)
+    fields = drawn.apply_fields(load_fields(project, world, cut), drawings, cut, world.square(FIELD_EDGE),
+                                FIELD_SHRINK)
+    labels = ground_labels(osm, world, fields, cfg.weight_res, drawn.overrides(drawings))
 
     # Farmlands: ett per jordbruksblock med fält. Startgården = blocket närmast startpunkten.
     start = cfg_map.get("start") or cfg_map["center"]
@@ -309,14 +319,15 @@ def build(project, args):
         x1, y1 = world.px(s_.e + s_.size / 2, s_.n - s_.size / 2, cfg.weight_res)
         labels[int(y0):int(y1), int(x0):int(x1)] = idx_yard
     spawn_pt = Point(farm.e - 15, farm.n + 38)   # framför gårdshuset
-    no_trees = unary_union([cut, field_union] + [s_.box.buffer(2 if s_.name.startswith("byggnad") else 10)
-                                                 for s_ in sites])
+    no_trees = unary_union([cut, field_union, drawn.no_tree_zone(drawings)]
+                           + [s_.box.buffer(2 if s_.name.startswith("byggnad") else 10) for s_ in sites])
     trees = obj.tree_points([g for c, g in areas if c == "forest"], no_trees, world.square(5))
     chm_path = project.lm / "laser" / "krontak.tif"
     if chm_path.exists():     # laser_trees.py: inga träd där Marktäckes skog saknar kronor (kalhyggen)
         before = len(trees)
         trees = obj.has_canopy(trees, chm_path)
         print(f"  Laserdata: {before - len(trees)} skogsträd borttagna där det inte står träd")
+    trees += drawn.trees(drawings, obj.TREE_DIR)          # träd utsatta i byggeditorn
     loose_path = project.lm / "trad.json"
     loose = []
     if loose_path.exists():   # åkerholmar, trädrader och gårdsträd: [[e, n], ...] under "points"

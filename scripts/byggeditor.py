@@ -21,6 +21,7 @@ Användning:
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -40,6 +41,22 @@ MIN_AREA = 12.0          # m², mindre byggnader visas inte
 ORTHO_RES = 1.0          # m per pixel för bakgrunden
 DEFAULT_SIZE = 10.0      # m, för byggnader utan mått i moddens XML
 DOORS = ROOT / "maps" / "modellriktning.json"   # dörrens sida per modell (grader från lokal +z), gemensam för kartorna
+
+
+TREE_NAMES = {"aspen": "Asp", "beech": "Bok", "oak": "Ek", "downyServiceBerry": "Häggmispel (buske)"}
+
+
+def tree_types():
+    """Trädarter och storlekar som finns i spelet (samma som build_map använder)."""
+    import fs25_objects as obj
+    out = {}
+    for art, stage, _w in obj.MATURE + obj.EDGE:
+        num = re.search(r"stage(\d+)", stage)
+        label = f"{TREE_NAMES.get(art, art)}, storlek {int(num.group(1)) if num else '?'}"
+        if "var" in stage:
+            label += f" ({stage.split('_')[-1]})"
+        out[stage] = {"art": art, "stage": stage, "label": label}
+    return sorted(out.values(), key=lambda t: t["label"])
 
 
 def footprint(poly):
@@ -111,6 +128,15 @@ def main():
     if not data["catalog"]:
         print("  Katalogen saknas eller är tom: kör först python scripts/mod_katalog.py data/mods", file=sys.stderr)
     store = project.dir / "byggnader.json"
+    drawings = project.dir / "ritningar.json"
+
+    def generated_trees():
+        """Träden från senaste bygget (build_map.py), i meter från kartans mitt, för att visa i editorn."""
+        path = project.build / "trad_placerade.json"
+        if not path.exists():
+            return []
+        t = json.loads(path.read_text(encoding="utf-8"))
+        return [[round(e - world.e0, 1), round(n - world.n0, 1)] for e, n in t["skog"] + t["utanfor"]]
     build = {"running": False, "log": ""}
 
     def run_build():
@@ -142,7 +168,9 @@ def main():
             if path == "/api/data":
                 placed = json.loads(store.read_text(encoding="utf-8")) if store.exists() else []
                 doors = json.loads(DOORS.read_text(encoding="utf-8")) if DOORS.exists() else {}
-                return self.send(200, json.dumps({**data, "placed": placed, "doors": doors}).encode())
+                drawn = json.loads(drawings.read_text(encoding="utf-8")) if drawings.exists() else []
+                return self.send(200, json.dumps({**data, "placed": placed, "doors": doors, "drawings": drawn,
+                                                  "treeTypes": tree_types(), "genTrees": generated_trees()}).encode())
             if path == "/api/build":
                 return self.send(200, json.dumps(build).encode())
             if path in files and files[path][0].exists():
@@ -159,6 +187,10 @@ def main():
                 placed = json.loads(body or b"[]")
                 store.write_text(json.dumps(placed, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
                 return self.send(200, json.dumps({"ok": True, "count": len(placed)}).encode())
+            if self.path == "/api/drawings":
+                drawn = json.loads(body or b"[]")
+                drawings.write_text(json.dumps(drawn, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+                return self.send(200, json.dumps({"ok": True, "count": len(drawn)}).encode())
             if self.path == "/api/doors":
                 DOORS.write_text(json.dumps(json.loads(body or b"{}"), indent=1, ensure_ascii=False, sort_keys=True)
                                  + "\n", encoding="utf-8")

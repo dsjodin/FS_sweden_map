@@ -74,6 +74,12 @@ Klicka på en verklig byggnad (Topografi 10), välj en moddbyggnad, dra och vrid
 den. Placeringarna sparas i `maps/<namn>/byggnader.json` och blir byggnader i
 kartan när `build_map.py` körs (knappen "Bygg kartan"). Moddarna blir beroenden.
 
+Läget **Måla mark** ritar ytor (gräs, åker, gårdsplan, asfaltyta, skog, sudda
+vägar, inga träd) och vägar (grus eller asfalt, valfri bredd). Läget **Träd**
+sätter ut träd av vald art och storlek. Ritningarna sparas i
+`maps/<namn>/ritningar.json` och läggs ovanpå datan av `build_map.py`
+(se `scripts/drawings.py`).
+
 ### Bygga i spelet i stället för i GIANTS Editor
 
 Placera byggnader och objekt i spelets byggläge, kopiera sparfilen till
