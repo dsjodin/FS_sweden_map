@@ -295,7 +295,8 @@ def build(project, args):
     mill = obj.mill_site(roads, farm, mill_blocked, inner)
     sites = [farm] + ([mill] if mill else [])
     obj.flatten(game, world, sites)
-    water_meshes = water.build_water(game, world, areas, osm[2])   # sänker terrängen under vattnet
+    water_meshes = water.build_water(game, world, areas, osm[2],   # sänker terrängen under vattnet
+                                     [(ROAD_STYLE[c][1], ln) for c, ln in roads])
     if game.max() > gen_i3d.HEIGHT_SCALE or game.min() < 0:
         sys.exit("Höjderna hamnar utanför heightScale efter planering.")
     dem = np.round(game / gen_i3d.HEIGHT_SCALE * 65535).astype(np.uint16)

@@ -25,6 +25,7 @@ STREAM_DEPTH = 0.7       # m från vattenytan ned till rännans botten
 WATER_ABOVE_BOTTOM = 0.3 # m vatten över dikesbottnen
 SNAP = 10.0              # m åt sidan där dikets botten söks (Topografi 10:s linjer har 4,5–9,5 m osäkerhet)
 STREAM_STEP = 4.0        # m mellan punkterna längs remsan
+ROAD_GAP = 1.5           # m utanför vägkanten där diket går i trumma (inget vatten, ingen ränna)
 LAKE_DEPTH = 1.5         # m från vattenytan ned till botten i sjöar och åar
 SHORE_SEARCH = 3         # px (á 2 m) runt en strandpunkt där lägsta terrängen blir vattenytan
 FLIP = False             # vänd trianglarna om vattnet bara syns underifrån
@@ -84,11 +85,40 @@ def snap_lines(game, world, waterways):
     return out
 
 
-def build_water(game, world, areas, waterways):
+def road_banks(game, world, transform, water_polys, roads):
+    """Där en väg korsar en vattenyta (höjdmodellen saknar broar) byggs en vägbank i vägens
+    höjd strax utanför vattnet, så att vägen går att köra på."""
+    for width, line in roads:
+        for poly in water_polys:
+            if not line.intersects(poly):
+                continue
+            outside = line.difference(poly.buffer(2)).intersection(poly.buffer(25))
+            pts = [q.coords[0] for part in _lines(outside) for q in
+                   (part.interpolate(d) for d in np.arange(0, part.length + 0.1, 2.0))]
+            if not pts:
+                continue
+            pts = np.array(pts)
+            level = float(np.median(_sample(game, world, pts[:, 0], pts[:, 1])))
+            bank = line.buffer(width / 2 + 1.5).intersection(poly.buffer(3))
+            if bank.is_empty:
+                continue
+            m = rasterize([(bank, 1)], out_shape=game.shape, transform=transform, dtype="uint8") > 0
+            game[m] = np.maximum(game[m], level)
+
+
+def build_water(game, world, areas, waterways, roads=()):
     """Sänker terrängen (game, spelets höjder) under vattnet och returnerar vattenytorna som
-    [(namn, vertices [(e, n, höjd)], trianglar [(i, j, k)])]."""
+    [(namn, vertices [(e, n, höjd)], trianglar [(i, j, k)])]. roads = [(bredd, linje)]:
+    under vägar blir det varken vatten eller ränna (trummor och broar)."""
     n = game.shape[0]
     transform, _upp = _grid(world, n)
+    road_zone = shapely.union_all([ln.buffer(w / 2 + ROAD_GAP) for w, ln in roads]) if roads else None
+    if road_zone is not None:
+        shapely.prepare(road_zone)
+    inner_sq = world.square(4)
+    road_banks(game, world, transform,
+               [p for c, g in areas if c == "water" for p in _polys(g.intersection(inner_sq)) if p.area > 50],
+               [(w, ln) for w, ln in roads if ln.intersects(inner_sq)])
     low = np.array(Image.fromarray(game.astype(np.float32)).filter(ImageFilter.MinFilter(2 * SHORE_SEARCH + 1)))
     bed = np.array(Image.fromarray(game.astype(np.float32)).filter(ImageFilter.MinFilter(3)))   # dikesbotten
     inner = world.square(4)
@@ -96,6 +126,8 @@ def build_water(game, world, areas, waterways):
 
     # Sjöar och breda åar
     water_polys = [p for c, g in areas if c == "water" for p in _polys(g.intersection(inner)) if p.area > 50]
+    if road_zone is not None:   # vattnet slutar vid vägbanken
+        water_polys = [q for p in water_polys for q in _polys(p.difference(road_zone)) if q.area > 50]
     for i, poly in enumerate(water_polys):
         poly = poly.simplify(1.5)
         if poly.is_empty or poly.geom_type != "Polygon":
@@ -122,6 +154,8 @@ def build_water(game, world, areas, waterways):
     surface = shapely.union_all(water_polys).buffer(1.0) if water_polys else None
     for i, (kind, line) in enumerate(waterways):
         geom = line.intersection(inner)
+        if road_zone is not None:
+            geom = geom.difference(road_zone)    # trumma under vägen
         if surface is not None:
             geom = geom.difference(surface)
         for part in _lines(geom):
@@ -145,6 +179,8 @@ def build_water(game, world, areas, waterways):
             meshes.append((f"stream{i + 1:03d}_{len(meshes)}", verts, faces))
             for k in range(len(pts) - 1):
                 seg = LineString([pts[k], pts[k + 1]]).buffer(STREAM_CUT)
+                if road_zone is not None and road_zone.intersects(seg):
+                    seg = seg.difference(road_zone)
                 cut_shapes.append((seg, float(min(h[k], h[k + 1])) - STREAM_DEPTH))
 
     lake_mask = rasterize(((g, 1) for g in lakes if not g.is_empty), out_shape=game.shape, transform=transform,
