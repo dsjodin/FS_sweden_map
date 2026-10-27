@@ -39,7 +39,8 @@ REPLACES = {"forest", "water", "residential", "meadow", "farmland", "wetland"}
 ROAD_CLASSES = {
     "Motorväg": "motorväg/riksväg", "Motortrafikled": "motorväg/riksväg", "Mötesfri väg": "motorväg/riksväg",
     "Landsväg": "länsväg", "Huvudgata": "länsväg",
-    "Landsväg liten": "småväg", "Småväg": "småväg", "Lokalgata stor": "småväg", "Lokalgata liten": "småväg",
+    "Landsväg liten": "länsväg",   # numrerade länsvägar, till exempel T732
+    "Småväg": "småväg", "Lokalgata stor": "småväg", "Lokalgata liten": "småväg",
     "Infartsväg/Utfartsväg": "småväg", "Kvartersväg": "småväg", "Parkeringsområdesväg": "småväg",
     "Leveransväg": "småväg",
     "Småväg enkel standard": "grusväg/brukningsväg", "Traktorväg": "grusväg/brukningsväg",

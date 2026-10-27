@@ -81,10 +81,19 @@ def farm_site(start_pt, farmyards, blocked, inner):
 
 
 def mill_site(roads, farm, blocked, inner):
-    """Spannmålsmottagningen: ledig yta intill en länsväg, helst cirka 2 km från gården."""
+    """Spannmålsmottagningen: ledig yta intill en länsväg, helst cirka 2 km från gården.
+    Finns ingen plats längs länsvägarna provas småvägarna."""
+    for classes in (("länsväg",), ("länsväg", "småväg")):
+        site = _mill_site(roads, farm, blocked, inner, classes)
+        if site is not None:
+            return site
+    return None
+
+
+def _mill_site(roads, farm, blocked, inner, classes):
     cands = []
     for cls, line in roads:
-        if cls != "länsväg" or not line.intersects(inner):
+        if cls not in classes or not line.intersects(inner):
             continue
         for d in np.arange(0, line.length, 40):
             p = line.interpolate(d)
