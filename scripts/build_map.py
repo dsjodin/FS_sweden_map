@@ -77,6 +77,8 @@ ROAD_STYLE = {  # vägklass från analyze_area -> (marklager, bredd i meter)
     "gårdsväg/infart": ("gravel01", 3),
 }
 MEADOW_CODES = {52, 53}      # betesmark och slåtteräng blir inte fält (antaget, se make_osm_fields.py)
+BUFFER_CODES = {77, 314}     # skyddszoner längs vattendrag: bara cirka 6 m breda remsor, får inte odlas
+MIN_FIELD_WIDTH = 15.0       # m medelbredd (2 × yta / omkrets); smalare remsor blir gräs, inte fält
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
@@ -185,7 +187,7 @@ def load_fields(project, world, cut):
     fields = []
     for f in json.loads(path.read_text(encoding="utf-8"))["features"]:
         p = f["properties"]
-        if p.get("grdkod_mar") in MEADOW_CODES:
+        if p.get("grdkod_mar") in MEADOW_CODES | BUFFER_CODES:
             continue
         geom = shape(f["geometry"]).buffer(0).buffer(-FIELD_SHRINK, join_style="mitre").intersection(inner)
         if geom.intersects(cut):
@@ -194,7 +196,7 @@ def load_fields(project, world, cut):
         geom = geom.simplify(1.0, preserve_topology=True)
         parts = [geom] if geom.geom_type == "Polygon" else [g for g in getattr(geom, "geoms", []) if g.geom_type == "Polygon"]
         for part in parts:
-            if part.area / 10_000 >= MIN_FIELD_HA:
+            if part.area / 10_000 >= MIN_FIELD_HA and 2 * part.area / part.length >= MIN_FIELD_WIDTH:
                 fields.append((part, str(p.get("blockid")), p.get("grdkod_mar")))
     fields.sort(key=lambda t: (-t[0].centroid.y, t[0].centroid.x))  # nummer från nordväst, rad för rad
     return fields
@@ -205,7 +207,7 @@ def surrounding_fields(project, world):
     sq = world.square()
     out = []
     for f in json.loads((project.raw / "jbv_skiften.geojson").read_text(encoding="utf-8"))["features"]:
-        if f["properties"].get("grdkod_mar") in MEADOW_CODES:
+        if f["properties"].get("grdkod_mar") in MEADOW_CODES | BUFFER_CODES:
             continue
         geom = shape(f["geometry"]).buffer(0).buffer(-FIELD_SHRINK, join_style="mitre")
         if geom.intersects(sq):
