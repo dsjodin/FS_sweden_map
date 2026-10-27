@@ -9,9 +9,10 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
   åkerjord i densityMap_ground
 - farmlands = jordbruksblock: varje block som har fält blir ett köpbart
   markområde. Blocket närmast startpunkten ägs från start.
-- marktyper från Lantmäteriets Marktäcke (skog, vatten, bebyggelse, öppen
-  mark) om den är hämtad med fetch_landcover.py, annars från OSM. Vägar och
-  gårdsplaner kommer från OSM.
+- marktyper (skog, vatten, bebyggelse, öppen mark) från Lantmäteriets
+  Marktäcke eller Topografi 10, vattendrag, vägar och byggnader från
+  Topografi 10 (data/topografi10/, se landcover.py). Det som saknas tas från
+  OSM, liksom gårdsplaner och gårdsvägar.
 - marktexturer: asfalt, grus, skogsmark, åkerjord och gräs
 - översiktskarta (PDA) ritad från samma data. Spelet visar den över dubbla
   kartytan, så den täcker också omgivningen runt kartan.
@@ -80,7 +81,8 @@ FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
 MIN_FIELD_HA = 0.5
 ROAD_MARGIN = 1.5            # m fri kant mellan vägkant och fält
-WATER_CUT = {"river": 8, "canal": 4, "stream": 3, "ditch": 1.5, "drain": 1.5}  # halv bredd inkl. kant, m
+WATER_CUT = {"river": 8, "canal": 4, "stream": 3, "ditch": 1.5, "drain": 1.5,   # halv bredd inkl. kant, m
+             "vattendrag": 2}   # Topografi 10: bäckar och större diken som linjer, breda åar är ytor
 OVERVIEW_COLORS = {
     "grass01": (126, 146, 84), "forestLeaves01": (52, 82, 46), "gravelSmall01": (150, 140, 120),
     "mudDark01": (168, 140, 92), "gravel01": (190, 176, 150), "asphalt01": (70, 70, 72),
@@ -377,25 +379,45 @@ def build(project, args):
 
 
 def load_land(project, world):
-    """OSM-data där marktäcket byts mot Lantmäteriets Marktäcke när det finns.
+    """OSM-data där Lantmäteriets data ersätter det som finns: marktyper från Marktäcke
+    (eller Topografi 10), vattendrag, vägar och byggnader från Topografi 10.
     Returnerar (osm-tupeln från load_features, källrader till modDesc)."""
     osm_path = project.raw / "osm.json"
     if not osm_path.exists():
         sys.exit(f"Hittar inte {project.rel(osm_path)}. Kör fetch_osm.py först "
                  f"(python scripts/pipeline.py --map {project.name} --only osm falt).")
-    osm = load_features(osm_path)
-    if not landcover.marktacke_files(project):
-        print("  Marktyper från OSM (Marktäcke saknas, se fetch_landcover.py)")
-        return osm, ["Vägar, skog och vatten: © OpenStreetMap-bidragsgivare, ODbL."]
-    lm = landcover.load_marktacke(project, world.scaled(2).square())   # dubbel yta för översiktskartan
-    counts = {}
-    for cls, _ in lm:
-        counts[cls] = counts.get(cls, 0) + 1
-    print("  Marktyper från Lantmäteriets Marktäcke: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
-    areas = [a for a in osm[0] if a[0] not in landcover.REPLACES] + lm
-    return (areas,) + tuple(osm[1:]), [
-        "Marktyper: Marktäcke Nedladdning, vektor, © Lantmäteriet, bearbetad, CC BY 4.0.",
-        "Vägar och gårdsplaner: © OpenStreetMap-bidragsgivare, ODbL."]
+    areas, roads, waterways, rail, buildings, places = load_features(osm_path)
+    area = world.scaled(2).square()          # dubbel yta för översiktskartan
+    lm_sources, osm_parts = [], ["gårdsplaner"]
+
+    def report(what, items):
+        counts = {}
+        for cls, _ in items:
+            counts[cls] = counts.get(cls, 0) + 1
+        print(f"  {what}: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+
+    if landcover.marktacke_files(project) or landcover.topo_files("mark"):
+        lm = landcover.load_marktacke(project, area)
+        src = "Marktäcke" if landcover.marktacke_files(project) else "Topografi 10"
+        report(f"Marktyper från {src}", lm)
+        areas = [a for a in areas if a[0] not in landcover.REPLACES] + lm
+        lm_sources.append(f"Marktyper: {src} Nedladdning, vektor")
+    else:
+        osm_parts.append("marktyper")
+    if landcover.has_topo():
+        roads = landcover.load_roads(area) + [r for r in roads if r[0] == "gårdsväg/infart"]
+        waterways = landcover.load_waterways(area)
+        topo_buildings = landcover.load_buildings(area)
+        buildings = [g for g, _ in topo_buildings]
+        report("Vägar från Topografi 10 (+ OSM:s gårdsvägar)", roads)
+        print(f"  Vattendrag från Topografi 10: {len(waterways)}. Byggnader: {len(buildings)}")
+        lm_sources.append("Vägar, vattendrag och byggnader: Topografi 10 Nedladdning, vektor")
+    else:
+        osm_parts += ["vägar", "vattendrag", "byggnader"]
+        print("  Vägar, vattendrag och byggnader från OSM (Topografi 10 saknas i data/topografi10/)")
+    sources = [f"{s}, © Lantmäteriet, bearbetad, CC BY 4.0." for s in lm_sources]
+    sources.append(", ".join(osm_parts).capitalize() + ": © OpenStreetMap-bidragsgivare, ODbL.")
+    return (areas, roads, waterways, rail, buildings, places), sources
 
 
 def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm):
@@ -492,7 +514,7 @@ def make_overview(project, path, labels, osm, world, res):
         if cls == "water":
             draw_polygon(d, geom, world, res, (88, 130, 170), (88, 130, 170))
     for kind, line in waterways:
-        if kind in ("river", "stream", "canal"):
+        if kind in ("river", "stream", "canal", "vattendrag"):
             d.line([world.px(x, y, res) for x, y in line.coords], fill=(88, 130, 170),
                    width=max(1, int(round((8 if kind == "river" else 2) * res / world.size))))
     for b in buildings:
