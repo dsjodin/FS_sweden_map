@@ -54,7 +54,7 @@ MIN_CROWN = 16.0         # m², mindre fläckar räknas som brus (ledningar, ens
 MULTI_SHARE = 0.25       # minst så stor andel flerreturer bland de höga träffarna runt en cell = vegetation
 POWERLINE_CLEAR = 5.0    # m på var sida om en kraftledning utan träd
 MIN_TREE = 3.0           # m, lägsta trädtopp som blir ett träd utanför skogen
-TALL = 12.0              # m: högre träd har bredare kronor, så topparna söks i ett större fönster
+TALL = 20.0              # m: högre träd har bredare kronor, så topparna söks i ett större fönster
 MARGIN = 20.0            # m utanför kartrutan
 to_wgs = Transformer.from_crs("EPSG:3006", "EPSG:4326", always_xy=True).transform
 
