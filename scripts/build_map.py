@@ -327,7 +327,9 @@ def build(project, args):
     areas, roads, _ww, _rail, buildings, _pl = osm
     field_union = unary_union([g.buffer(3) for g, _, _ in fields])
     inner = world.square(150)
-    farm = obj.farm_site(start_pt, [g for c, g in areas if c == "farmyard"], unary_union([field_union, cut]), inner)
+    forests = [g for c, g in areas if c in landcover.FORESTS]
+    farm = obj.farm_site(start_pt, [g for c, g in areas if c == "farmyard"],     # inte på fält, vägar eller i skog
+                         unary_union([field_union, cut] + forests), inner)
     if farm is None:
         sys.exit("Hittade ingen ledig plats för startgården nära startpunkten.")
     mill_blocked = unary_union([field_union, cut, farm.box.buffer(200)]
