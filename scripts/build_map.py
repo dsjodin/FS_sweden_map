@@ -681,7 +681,8 @@ def price_scales(farm, fields, osm, world):
 
 def save_farmland_image(path, farm):
     """Markområdena som bild för kontroll (build/<namn>/markomraden.png): en färg per område,
-    startgårdens område (1) rött, gränser svarta och områdets nummer i dess största del."""
+    startgårdens område (1) rött, gränser svarta och områdets nummer i dess största del. Dessutom
+    markomraden_kant.png med bara gränser och nummer på genomskinlig botten, för kontrollkartan."""
     rgb = np.random.default_rng(5).integers(90, 230, (256, 3)).astype(np.uint8)
     rgb[0], rgb[1] = (255, 255, 255), (220, 30, 30)
     img = rgb[farm]
@@ -690,12 +691,16 @@ def save_farmland_image(path, farm):
     edge[:, 1:] |= farm[:, 1:] != farm[:, :-1]
     img[edge] = 0
     im = Image.fromarray(img)
+    rgba = np.zeros(farm.shape + (4,), np.uint8)
+    rgba[farm == 1] = (220, 30, 30, 70)
+    rgba[edge] = (255, 255, 0, 255)
+    kant = Image.fromarray(rgba, "RGBA")
     from PIL import ImageFont
     try:
         font = ImageFont.load_default(size=26)
     except TypeError:                                       # äldre Pillow
         font = ImageFont.load_default()
-    draw = ImageDraw.Draw(im)
+    draws = (ImageDraw.Draw(im), ImageDraw.Draw(kant))
     step = 8                                                # sök platsen för numret i ett glesare rutnät
     small = farm[::step, ::step]
     depth = np.zeros(small.shape, np.int32)                 # avstånd in från områdets kant, i steg
@@ -714,9 +719,11 @@ def save_farmland_image(path, farm):
             continue
         d = np.where(farm[::step, ::step] == i, depth, -1)
         y, x = np.unravel_index(np.argmax(d), d.shape)
-        draw.text((x * step, y * step), str(int(i)), fill=(0, 0, 0), font=font, anchor="mm",
-                  stroke_width=3, stroke_fill=(255, 255, 255))
+        for draw in draws:
+            draw.text((x * step, y * step), str(int(i)), fill=(0, 0, 0), font=font, anchor="mm",
+                      stroke_width=3, stroke_fill=(255, 255, 255))
     im.save(path)
+    kant.save(path.with_name("markomraden_kant.png"))
 
 
 def spread(arr, steps, zone=None, zone_of_id=None):

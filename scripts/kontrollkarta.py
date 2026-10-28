@@ -6,6 +6,7 @@ Skapar en mapp med en HTML-sida som visar, med lager som kan tändas och släcka
 - laserns trädkronor (laser_trees.py), färgade efter höjd
 - träden som build_map.py har satt ut, i skogen och utanför skogen
 - Marktäckes skogar och Jordbruksverkets fält
+- markområdena med samma nummer som i spelet (fält N ligger på markområde N)
 Klick på kartan visar koordinaten i spelet, samma som på kartan i spelet.
 
 Kör efter build_map.py. Mappen innehåller ortofoto och ska bara visas på dina
@@ -62,6 +63,7 @@ if (DATA.canopy) over['Laserns trädkronor'] = L.imageOverlay('krontak.png', b, 
 function poly(list, style) { return L.layerGroup(list.map(r => L.polygon(r, style))); }
 over['Marktäckes skog (kontur)'] = poly(DATA.forest, {color: '#7CFC00', weight: 1.5, fill: false}).addTo(map);
 over['Fält (kontur)'] = poly(DATA.fields, {color: '#ffb347', weight: 1.2, fill: false});
+if (DATA.farmlands) over['Markområden med nummer (spelet)'] = L.imageOverlay('markomraden.png', DATA.square);
 function dots(list, color) {
   return L.layerGroup(list.map(p => L.circleMarker(p, {radius: 2.2, stroke: false, fillColor: color, fillOpacity: 0.95})));
 }
@@ -132,6 +134,9 @@ def main():
             rgb = src.read([1, 2, 3], window=from_bounds(x0, y0, x1, y1, src.transform),
                            out_shape=(3,) + size, boundless=True, fill_value=0)
         Image.fromarray(rgb.transpose(1, 2, 0)).save(out / "ortofoto.jpg", quality=82)
+    farmlands = project.build / "markomraden_kant.png"       # build_map.py: markområdenas gränser och nummer
+    if farmlands.exists():
+        (out / "markomraden.png").write_bytes(farmlands.read_bytes())
     chm = project.lm / "laser" / "krontak.tif"
     if chm.exists():
         canopy_png(chm, (x0, y0, x1, y1), out / "krontak.png")
@@ -149,7 +154,7 @@ def main():
         "title": project.config.get("title", project.name),
         "bounds": [latlon(x0, y0), latlon(x1, y1)],
         "square": [latlon(ix0, iy0), latlon(ix1, iy1)],
-        "ortho": ortho.exists(), "canopy": chm.exists(),
+        "ortho": ortho.exists(), "canopy": chm.exists(), "farmlands": farmlands.exists(),
         "forest": forest, "fields": fields,
         "trees_forest": [latlon(e, n) for e, n in trees["skog"]],
         "trees_loose": [latlon(e, n) for e, n in trees["utanfor"]],
