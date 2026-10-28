@@ -40,7 +40,8 @@ let D, placed = [], drawings = [], mode = 'bygg';
 let selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = false, modFilter = '';
 let tool = null, current = null, selDraw = null;            // Måla mark: verktyg, pågående ritning, vald ritning
 let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null, showGen = false;
-let start = {gard: null, falt: []};                         // Start-läget: gårdens mitt och en punkt per startfält
+let start = {gard: null, falt: []};   // Start-läget: gårdens mitt, bredd, längd, vridning, byggnader och en punkt per startfält
+let freeItem = null;                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
                     'skog': '#2e7d32', 'sudda vägar': '#e53935', 'inga träd': '#ff9800'};
@@ -152,7 +153,12 @@ function toggleField(f, latlng) {
   else start.falt.push(xy(latlng));
   saveStart(); draw(); panel();
 }
-function farmCorners(x, y) { const h = D.farmSize / 2; return [ll(x - h, y - h), ll(x + h, y - h), ll(x + h, y + h), ll(x - h, y + h)]; }
+function farmCorners(x, y) {     // bredden längs vridningen (grader moturs från öster), som i build_map.Site
+  const r = start.vridning * Math.PI / 180, w = start.bredd / 2, l = start.langd / 2;
+  return [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([a, b]) =>
+    ll(x + a * w * Math.cos(r) - b * l * Math.sin(r), y + a * w * Math.sin(r) + b * l * Math.cos(r)));
+}
+function rotateFarm(d) { if (!start.gard) return; start.vridning = ((start.vridning + d + 540) % 360) - 180; saveStart(); draw(); panel(); }
 function drawStart() {
   startLayer.clearLayers();
   const own = start.falt.length > 0;
@@ -164,8 +170,9 @@ function drawStart() {
     poly.on('click', e => { L.DomEvent.stop(e); if (tool === 'gard') map.fire('click', {latlng: e.latlng}); else toggleField(f, e.latlng); });
   }
   if (start.gard) {
-    const sq = L.polygon(farmCorners(...start.gard), {color: '#ffd400', weight: 3, fillColor: '#ffd400', fillOpacity: 0.25,
-      interactive: mode === 'start'}).bindTooltip('Startgården (dra för att flytta)', {sticky: true}).addTo(startLayer);
+    const sq = L.polygon(farmCorners(...start.gard), {color: '#ffd400', weight: 3, fillColor: '#ffd400',
+      fillOpacity: mode === 'start' ? 0.25 : 0.08, interactive: mode === 'start'})
+      .bindTooltip('Startgårdens gårdsplan (dra för att flytta)', {sticky: true}).addTo(startLayer);
     sq.on('click', L.DomEvent.stop);
     sq.on('mousedown', e => {
       L.DomEvent.stop(e);
@@ -312,7 +319,13 @@ function panelBygg() {
       <div id="list">${catalogList(selFoot)}</div>`;
   } else if (!selPlace) {
     h += `<p>Klicka på en <b style="color:#ff4b4b">röd</b> kontur för att välja en byggnad till den.
-      <b style="color:#3fd16b">Gröna</b> har redan en byggnad.</p>`;
+      <b style="color:#3fd16b">Gröna</b> har redan en byggnad.</p>
+      <h2>Placera fritt</h2>
+      <p class="muted">${tool === 'fri' && freeItem ? `Klicka i kartan där <b>${esc(freeItem.name)}</b> ska stå
+        (<kbd>Esc</kbd> avbryter).` : 'Välj en byggnad och klicka sedan i kartan, till exempel på gårdsplanen. Den vrids som gårdsplanen.'}</p>
+      <select id="mod" style="width:100%;margin-bottom:6px">${modOptions()}</select>
+      <input type="search" id="q" placeholder="Sök i katalogen …" value="${esc(query)}">
+      <div id="list">${catalogList(null)}</div>`;
   }
   return h;
 }
@@ -361,10 +374,21 @@ function panelStart() {
   const ha = sel.reduce((a, f) => a + f.ha, 0);
   let h = `<h2>Startgården</h2>
     <div class="row"><button id="pg" class="${tool === 'gard' ? 'on' : ''}">${start.gard ? 'Flytta gården hit …' : 'Placera gården'}</button>
-    ${start.gard ? '<button id="rg">Låt bygget välja plats</button>' : ''}</div>
-    <p class="muted">${start.gard ? `Den gula rutan (${D.farmSize} × ${D.farmSize} m) är startgården med gårdshus, maskinhall och silo.
-      Dra den för att flytta den. Marken under planas.` : 'Ingen plats vald: bygget väljer en ledig plats nära startpunkten, utanför fält, vägar och skog. Klicka på knappen och sedan i kartan.'}</p>
-    <h2>Startfält</h2>`;
+    ${start.gard ? '<button id="rg">Låt bygget välja plats</button>' : ''}</div>`;
+  if (start.gard) {
+    h += `<div class="row">bredd <input type="number" id="gw" min="20" max="400" step="5" value="${start.bredd}" style="width:64px">
+      längd <input type="number" id="gl" min="20" max="400" step="5" value="${start.langd}" style="width:64px"> m</div>
+      <div class="row">vridning ${start.vridning.toFixed(0)}° <button data-g="-15">↺ 15°</button><button data-g="-1">↺ 1°</button>
+      <button data-g="1">↻ 1°</button><button data-g="15">↻ 15°</button></div>
+      <div class="row"><label><input type="checkbox" id="gb" ${start.byggnader ? 'checked' : ''}>
+      spelets gårdshus, maskinhall och silo på gårdsplanen</label></div>
+      <p class="muted">Den gula rutan är gårdsplanen: marken planas, blir grus och är din från start. Dra den för att flytta,
+      <kbd>Q</kbd>/<kbd>E</kbd> vrider (med <kbd>Shift</kbd> 15°). ${start.byggnader ? '' :
+      'Utan spelets byggnader: sätt ut egna under Byggnader → Placera fritt. Ta med ett bostadshus, annars finns ingen säng att sova i.'}</p>`;
+  } else {
+    h += '<p class="muted">Ingen plats vald: bygget väljer en ledig plats nära startpunkten, utanför fält, vägar och skog. Klicka på knappen och sedan i kartan.</p>';
+  }
+  h += '<h2>Startfält</h2>';
   if (!D.fields.length) return h + '<p>Bygg kartan en gång, så visas fälten här.</p>';
   h += `<p>${own ? `${sel.length} fält valda, ${ha.toFixed(1)} ha.` : `Inga valda. Senaste bygget gav dig ${sel.length} fält (${ha.toFixed(1)} ha), streckade.`}
     Klicka på ett fält för att välja eller ta bort det. Du äger de valda fälten från start, med den mark runt dem
@@ -423,11 +447,19 @@ function panel() {
   // Start
   on('pg', 'onclick', () => startTool(tool === 'gard' ? null : 'gard'));
   on('rg', 'onclick', () => { start.gard = null; saveStart(); draw(); panel(); });
+  side.querySelectorAll('[data-g]').forEach(b => b.onclick = () => rotateFarm(+b.dataset.g));
+  for (const [id, key] of [['gw', 'bredd'], ['gl', 'langd']])
+    on(id, 'onchange', e => { const v = parseFloat(e.target.value); if (v >= 10) { start[key] = v; saveStart(); draw(); } });
+  on('gb', 'onchange', e => { start.byggnader = e.target.checked; saveStart(); panel(); });
   on('cf', 'onclick', () => { start.falt = []; saveStart(); draw(); panel(); });
   document.getElementById('build').onclick = startBuild;
 }
 function bindList() {
-  side.querySelectorAll('.item').forEach(el => el.onclick = () => placeOn(selFoot, D.catalog[+el.dataset.i]));
+  side.querySelectorAll('.item').forEach(el => el.onclick = () => {
+    const c = D.catalog[+el.dataset.i];
+    if (selFoot) placeOn(selFoot, c);
+    else { freeItem = c; tool = 'fri'; draw(); panel(); }
+  });
 }
 
 // --- Bygga kartan -------------------------------------------------------------------------------
@@ -462,6 +494,12 @@ async function startBuild() {
 
 // --- Mus och tangentbord ------------------------------------------------------------------------
 map.on('click', e => {
+  if (mode === 'bygg' && tool === 'fri' && freeItem) {     // fri placering, vriden som gårdsplanen
+    const [x, y] = xy(e.latlng), c = freeItem;
+    placeOn({id: 'fri-' + Date.now(), cx: x, cy: y, angle: start.gard ? (start.vridning + 180) % 180 : 0,
+             length: Math.max(c.width, c.length), width: Math.min(c.width, c.length)}, c);
+    tool = null; freeItem = null; draw(); panel(); return;
+  }
   if (mode === 'start' && tool === 'gard') {
     start.gard = xy(e.latlng).map(Math.round); tool = null; saveStart(); draw(); panel(); return;
   }
@@ -496,6 +534,8 @@ document.addEventListener('keydown', e => {
   else if (mode === 'bygg' && (k === 'q' || k === 'Q')) rotate(big ? -15 : -1);
   else if (mode === 'bygg' && (k === 'e' || k === 'E')) rotate(big ? 15 : 1);
   else if (mode === 'bygg' && (k === 'f' || k === 'F')) rotate(180);
+  else if (mode === 'start' && (k === 'q' || k === 'Q')) rotateFarm(big ? -15 : -1);
+  else if (mode === 'start' && (k === 'e' || k === 'E')) rotateFarm(big ? 15 : 1);
   else if (k === 'Escape') { selFoot = selPlace = selDraw = null; tool = null; draw(); panel(); }
   else return;
   e.preventDefault();
@@ -504,7 +544,9 @@ document.addEventListener('keydown', e => {
 fetch('api/data').then(r => r.json()).then(d => {
   D = d; placed = d.placed || []; drawings = d.drawings || []; D.doors = d.doors || {};
   D.genTrees = d.genTrees || []; D.treeTypes = d.treeTypes || []; D.fields = d.fields || []; D.farmSize = d.farmSize || 100;
-  start = {gard: (d.start || {}).gard || null, falt: (d.start || {}).falt || []};
+  const s0 = d.start || {};
+  start = {gard: s0.gard || null, falt: s0.falt || [], bredd: s0.bredd || D.farmSize, langd: s0.langd || D.farmSize,
+           vridning: s0.vridning || 0, byggnader: s0.byggnader !== false};
   D.catalog.forEach(c => { if (c.thumb) c.thumb = 'img/' + c.thumb.split('/').pop(); });
   const bases = {};
   for (const bg of D.backgrounds) bases[bg.name] = L.imageOverlay(bg.file, [[-bg.half, -bg.half], [bg.half, bg.half]]);

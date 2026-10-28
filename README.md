@@ -97,9 +97,11 @@ sätter ut träd av vald art och storlek. Ritningarna sparas i
 `maps/<namn>/ritningar.json` och läggs ovanpå datan av `build_map.py`
 (se `scripts/drawings.py`).
 
-Läget **Start** väljer var startgården står (en gul ruta på 100 × 100 m som går att dra)
-och vilka fält du äger från start (klicka på fälten från senaste bygget). Valen sparas
-i `maps/<namn>/start.json`. Utan val väljer bygget själv.
+Läget **Start** väljer var startgården står (en gul gårdsplan som går att dra, med valfri
+bredd, längd och vridning, med eller utan spelets gårdshus, maskinhall och silo) och vilka
+fält du äger från start (klicka på fälten från senaste bygget). Valen sparas i
+`maps/<namn>/start.json`. Utan val väljer bygget själv. Under **Byggnader → Placera fritt**
+sätter du ut moddbyggnader var som helst, till exempel på gårdsplanen.
 
 ### Bygga i spelet i stället för i GIANTS Editor
 

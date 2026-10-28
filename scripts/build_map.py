@@ -341,7 +341,8 @@ def build(project, args):
     inner = world.square(150)
     forests = [g for c, g in areas if c in landcover.FORESTS]
     if chosen["gard"]:                                       # byggeditorns Start-läge
-        farm = obj.Site("gård", world.e0 + chosen["gard"][0], world.n0 + chosen["gard"][1], obj.FARM_SIZE)
+        farm = obj.Site("gård", world.e0 + chosen["gard"][0], world.n0 + chosen["gard"][1],
+                        chosen["bredd"], chosen["langd"], chosen["vridning"])
     else:                                                    # inte på fält, vägar eller i skog
         farm = obj.farm_site(start_pt, [g for c, g in areas if c == "farmyard"],
                              unary_union([field_union, cut] + forests), inner)
@@ -361,11 +362,11 @@ def build(project, args):
     dem = np.round(game / gen_i3d.HEIGHT_SCALE * 65535).astype(np.uint16)
     height_at = height_sampler(game, world)
     idx_yard = [name for name, _ in GROUND].index("gravelSmall01")
-    for s_ in sites:
-        x0, y0 = world.px(s_.e - s_.size / 2, s_.n + s_.size / 2, cfg.weight_res)
-        x1, y1 = world.px(s_.e + s_.size / 2, s_.n - s_.size / 2, cfg.weight_res)
-        labels[int(y0):int(y1), int(x0):int(x1)] = idx_yard
-    spawn_pt = Point(farm.e - 15, farm.n + 38)   # framför gårdshuset
+    from rasterio.features import rasterize
+    yard = rasterize(((s_.box, 1) for s_ in sites), out_shape=labels.shape,
+                     transform=info_transform(world, labels.shape[0]), dtype="uint8") > 0
+    labels[yard] = idx_yard
+    spawn_pt = Point(*farm.at(-15, min(38, farm.length / 2 - 2)))   # framför gårdshuset
     no_trees = unary_union([cut, field_union, drawn.no_tree_zone(drawings)]
                            + [s_.box.buffer(2 if s_.name.startswith("byggnad") else 10) for s_ in sites])
     conifer = [g for c, g in areas if c == "barrskog"]
@@ -479,7 +480,7 @@ def build(project, args):
             for i in range(1, n_named + n_other + 1) if ha[i] > 0), encoding="utf-8")
     placements = load_placements(project) + [dict(pl, position=[pl["position"][0], site.height, pl["position"][2]])
                                              for site, pl in edited]
-    obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements)
+    obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements, chosen["byggnader"])
     obj.write_fields_xml(maps_dir / "fields.xml", fields)
     obj.patch_map_xml(maps_dir / "map.xml")
     write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""), sources)
@@ -499,7 +500,8 @@ def build(project, args):
     owned_ha = ha[1:n_start + 1].sum()
     print(f"\n{title}: {len(fields)} fält i {n_named + n_other} markområden, terräng {base:.1f}–{real_max:.1f} m ö.h.")
     print(f"Startgård: {start_desc}, {owned_ha:.1f} ha mark"
-          + (", gården där du placerade den" if chosen["gard"] else ""))
+          + (f", gården där du placerade den ({farm.width:.0f} × {farm.length:.0f} m"
+             + ("" if chosen["byggnader"] else ", utan förvalda byggnader") + ")" if chosen["gard"] else ""))
     print(f"Vatten: {sum(m[0].startswith('water') for m in water_meshes)} vattenytor, "
           f"{sum(m[0].startswith('stream') for m in water_meshes)} diken och bäckar")
     print(f"Träd: {len(trees)}" + (f" (varav {len(loose)} utanför skogen)" if loose else "")
@@ -696,11 +698,14 @@ def price_scales(farm, fields, osm, world):
 
 
 def load_start(project, world):
-    """Byggeditorns Start-läge (maps/<namn>/start.json): gårdens mitt och en punkt i varje startfält,
-    i meter från kartans mitt. Punkterna i SWEREF; fälten som innehåller dem blir startgårdens."""
+    """Byggeditorns Start-läge (maps/<namn>/start.json): gårdens mitt (meter från kartans mitt), bredd,
+    längd, vridning (grader moturs från öster), om de förvalda byggnaderna ska stå där, och en punkt i
+    varje startfält. Punkterna i SWEREF; fälten som innehåller dem blir startgårdens."""
     path = project.dir / "start.json"
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    return {"gard": data.get("gard"),
+    return {"gard": data.get("gard"), "bredd": float(data.get("bredd") or obj.FARM_SIZE),
+            "langd": float(data.get("langd") or obj.FARM_SIZE), "vridning": float(data.get("vridning") or 0),
+            "byggnader": data.get("byggnader", True),
             "falt": [Point(world.e0 + x, world.n0 + y) for x, y in data.get("falt", [])]}
 
 

@@ -118,16 +118,28 @@ FLATTEN_BLEND = 20      # m övergång mellan planad yta och terräng
 
 
 class Site:
-    """En planad plats i SWEREF: mitt, storlek och planad höjd (sätts av flatten)."""
+    """En planad plats i SWEREF: mitt, bredd, längd, vridning (grader moturs från öster, bredden längs
+    vridningen) och planad höjd (sätts av flatten). Utan längd en kvadrat med sidan size."""
 
-    def __init__(self, name, e, n, size):
-        self.name, self.e, self.n, self.size = name, e, n, size
+    def __init__(self, name, e, n, size, length=None, rot=0.0):
+        self.name, self.e, self.n = name, e, n
+        self.width, self.length, self.rot = size, length or size, rot
         self.height = None
 
     @property
+    def size(self):
+        return max(self.width, self.length)
+
+    def at(self, dx, dn):
+        """Punkt (e, n) dx meter längs bredden och dn meter längs längden från mitten."""
+        r = math.radians(self.rot)
+        return self.e + dx * math.cos(r) - dn * math.sin(r), self.n + dx * math.sin(r) + dn * math.cos(r)
+
+    @property
     def box(self):
-        h = self.size / 2
-        return box(self.e - h, self.n - h, self.e + h, self.n + h)
+        from shapely import affinity
+        w, h = self.width / 2, self.length / 2
+        return affinity.translate(affinity.rotate(box(-w, -h, w, h), self.rot, origin=(0, 0)), self.e, self.n)
 
 
 def find_site(name, candidates, size, blocked, inner, prefer):
@@ -187,10 +199,11 @@ def flatten(game, world, sites):
     ex = world.e0 - world.half + xs * upp
     ny = world.n0 + world.half - ys * upp
     for s in sites:
-        h = s.size / 2
-        inside = (np.abs(ex - s.e) <= h) & (np.abs(ny - s.n) <= h)
-        s.height = float(np.median(game[inside]))
-        dist = np.maximum(np.abs(ex - s.e) - h, np.abs(ny - s.n) - h)   # 0 inne i rutan
+        r = math.radians(s.rot)
+        u = (ex - s.e) * math.cos(r) + (ny - s.n) * math.sin(r)           # längs bredden
+        v = -(ex - s.e) * math.sin(r) + (ny - s.n) * math.cos(r)          # längs längden
+        dist = np.maximum(np.abs(u) - s.width / 2, np.abs(v) - s.length / 2)   # 0 eller mindre inne i rutan
+        s.height = float(np.median(game[dist <= 0]))
         w = np.clip(1 - dist / FLATTEN_BLEND, 0, 1)
         w = w * w * (3 - 2 * w)                                        # mjuk kurva
         game[:] = game * (1 - w) + s.height * w
@@ -300,14 +313,15 @@ def add_trees(root, trees, world, height_at, nid, seed=11):
 
 
 def add_store_spawn(root, farm, world, nid):
-    """Plats där köpta fordon dyker upp: en 40 m lång linje i gårdens östra del."""
+    """Plats där köpta fordon dyker upp: en 40 m lång linje i gårdens östra del (vriden med gården).
+    På en mindre gårdsplan än 100 m hamnar den närmare mitten."""
     scene = root.find("Scene")
     uas = root.find("UserAttributes")
-    x, z = world.xz(farm.e + 38, farm.n + 20)
+    x, z = world.xz(*farm.at(min(38, farm.width / 2 - 6), min(20, farm.length / 2 - 2)))
     start_id = nid()
     start = ET.SubElement(scene, "TransformGroup", {"name": "storeSpawnPlace1Start",
                                                     "translation": f"{x:.1f} {farm.height:.2f} {z:.1f}",
-                                                    "nodeId": start_id})
+                                                    "rotation": f"0 {farm.rot:g} 0", "nodeId": start_id})
     ET.SubElement(start, "TransformGroup", {"name": "storeSpawnPlace1End", "translation": "0 0 40", "nodeId": nid()})
     ua = ET.SubElement(uas, "UserAttribute", {"nodeId": start_id})
     ET.SubElement(ua, "Attribute", {"name": "onCreate", "type": "scriptCallback",
@@ -316,11 +330,15 @@ def add_store_spawn(root, farm, world, nid):
 
 
 # --- Konfigurationsfiler -----------------------------------------------------------------------
-def write_placeables(path, farm, mill, world, placements=()):
+def write_placeables(path, farm, mill, world, placements=(), farm_buildings=True):
+    """placeables.xml: startgårdens byggnader (om farm_buildings, vridna med gården), spannmåls-
+    mottagningen och byggnader från byggeditorn och sparfiler."""
     rows = ['<?xml version="1.0" encoding="utf-8" standalone="no" ?>', "<placeables>"]
-    for b in FARM:
-        x, z = world.xz(farm.e + b["dx"], farm.n + b["dz"])
-        attrs = f'filename="{b["file"]}" position="{x:.2f} {farm.height:.3f} {z:.2f}" rotation="{b["rot"]}"'
+    for b in FARM if farm_buildings else []:
+        x, z = world.xz(*farm.at(b["dx"], b["dz"]))
+        rx, ry, rz = (float(v) for v in b["rot"].split())
+        attrs = (f'filename="{b["file"]}" position="{x:.2f} {farm.height:.3f} {z:.2f}" '
+                 f'rotation="{rx:g} {(ry + farm.rot + 180) % 360 - 180:g} {rz:g}"')
         if b.get("farmhouse"):
             rows += [f"    <placeable {attrs}>", '        <farmhouse isFreeForAll="true"/>',
                      '        <wardrobe isFreeForAll="true"/>', "    </placeable>"]
