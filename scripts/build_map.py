@@ -451,7 +451,8 @@ def build(project, args):
         print(f"Markpris: {eur(price)}/ha för åker, skog och annan mark billigare. Markområdena kostar "
               f"{eur(costs[len(costs) // 2])} i mitten och {eur(costs[-1])} som mest")
     # Kontroll, bara på servern (inte i modden): bild med numren och lista nummer -> fastighet och pris.
-    names = {i: f"fält {i}, " + (k if k in properties else f"jordbruksblock {k}") for i, (_, k, _) in enumerate(fields, 1)}
+    names = {i: f"fält {i} ({(obj.CROP_FRUIT.get(c) or 'plöjt').lower()}), "
+                + (k if k in properties else f"jordbruksblock {k}") for i, (_, k, c) in enumerate(fields, 1)}
     names.update({i: k for k, i in lone_id.items()})
     save_farmland_image(project.build / "markomraden.png", farm_arr)
     (project.build / "markomraden.txt").write_text(
