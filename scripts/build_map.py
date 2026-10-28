@@ -85,6 +85,8 @@ BUFFER_CODES = {77, 314}     # skyddszoner längs vattendrag: bara cirka 6 m bre
 MIN_FIELD_WIDTH = 15.0       # m medelbredd (2 × yta / omkrets); smalare remsor blir gräs, inte fält
 ARM_WIDTH = 12.0             # m: delar av ett fält som är smalare än så klipps bort
 FARMLAND_REACH = 300.0       # m: mark utan fält hör till närmaste jordbruksblock inom detta avstånd
+OTHER_LAND_CELL = 500.0      # m: resten av kartan blir markområden i rutor av den här storleken
+MIN_OTHER_HA = 3.0           # ha: mindre rester går till närmaste markområde
 NO_BUILD_WATER = 2.5         # m på var sida om diken och bäckar där man inte får bygga
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
@@ -402,14 +404,16 @@ def build(project, args):
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
     farm_arr = extend_farmlands(np.array(farm_img, dtype=np.uint8), no_build, world, osm)
+    near_fields = np.mean(farm_arr > 0)
+    farm_arr, n_other = fill_farmlands(farm_arr, world, len(order) + 1)
     binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), farm_arr)
     binfmt.paint_grle(str(data_dir / "infoLayer_placementCollision.grle"), no_build.astype(np.uint8))
-    print(f"Mark: {np.mean(farm_arr > 0):.0%} av kartan går att köpa, {np.mean(no_build):.0%} spärrad för bygge "
-          "(vägar, vatten, diken, järnväg)")
+    print(f"Mark: {near_fields:.0%} av kartan hör till jordbruksblocken, resten till {n_other} andra markområden "
+          f"(skog, tätort). {np.mean(no_build):.0%} spärrad för bygge (vägar, vatten, diken, järnväg)")
 
     # Konfiguration: fs25-empty-map:s filer, sedan våra farmlands, modDesc-text och översiktskarta.
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
-    write_farmlands(maps_dir / "farmlands.xml", order)
+    write_farmlands(maps_dir / "farmlands.xml", len(order) + n_other)
     placements = load_placements(project) + [dict(pl, position=[pl["position"][0], site.height, pl["position"][2]])
                                              for site, pl in edited]
     obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements)
@@ -524,9 +528,9 @@ def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm,
     tree.write(i3d_path, encoding="iso-8859-1", xml_declaration=True)
 
 
-def write_farmlands(path, order):
+def write_farmlands(path, count):
     rows = [f'        <farmland id="1" priceScale="1" npcName="FARMER" defaultFarmProperty="true" />']
-    rows += [f'        <farmland id="{i}" priceScale="1" npcName="FARMER" />' for i in range(2, len(order) + 1)]
+    rows += [f'        <farmland id="{i}" priceScale="1" npcName="FARMER" />' for i in range(2, count + 1)]
     path.write_text(
         '<?xml version="1.0" encoding="utf-8" standalone="no" ?>\n<map>\n'
         '    <farmlands densityMapFilename="maps/data/infoLayer_farmland.grle" numChannels="8" pricePerHa="60000">\n'
@@ -553,23 +557,12 @@ def no_build_mask(osm, world, res):
 
 def extend_farmlands(farm, no_build, world, osm):
     """Mark utan fält läggs till närmaste markområde inom FARMLAND_REACH, så att man kan köpa
-    och bygga på gårdsplaner, ängar och skogsbryn. Vägar, vatten och tätorter blir inte köpbara."""
+    och bygga på gårdsplaner, ängar och skogsbryn. Vägar, vatten och tätorter hör inte till blocken
+    (fill_farmlands ger dem egna markområden)."""
     from rasterio.features import rasterize
     res = farm.shape[0]
     f = 2                                                   # grövre rutnät för spridningen
-    small = farm[::f, ::f].copy()
-    for _ in range(int(FARMLAND_REACH / (world.size / res * f))):
-        empty = small == 0
-        if not empty.any():
-            break
-        for src, dst in (((slice(1, None), slice(None)), (slice(None, -1), slice(None))),
-                         ((slice(None, -1), slice(None)), (slice(1, None), slice(None))),
-                         ((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
-                         ((slice(None), slice(None, -1)), (slice(None), slice(1, None)))):
-            nb = small[src]
-            take = empty[dst] & (nb > 0)
-            small[dst][take] = nb[take]
-            empty[dst] &= ~take
+    small = spread(farm[::f, ::f].copy(), int(FARMLAND_REACH / (world.size / res * f)))
     grown = np.repeat(np.repeat(small, f, axis=0), f, axis=1)[:res, :res]
     town = [g for c, g in osm[0] if c == "residential"]
     blocked = no_build.copy()
@@ -577,6 +570,50 @@ def extend_farmlands(farm, no_build, world, osm):
         blocked |= rasterize(((g, 1) for g in town), out_shape=farm.shape,
                              transform=info_transform(world, res), dtype="uint8") > 0
     return np.where(farm > 0, farm, np.where(blocked, 0, grown)).astype(np.uint8)
+
+
+def spread(arr, steps):
+    """Fyller nollor med grannens markområde, en pixel per steg (åt fyra håll)."""
+    for _ in range(steps):
+        empty = arr == 0
+        if not empty.any():
+            break
+        for src, dst in (((slice(1, None), slice(None)), (slice(None, -1), slice(None))),
+                         ((slice(None, -1), slice(None)), (slice(1, None), slice(None))),
+                         ((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+                         ((slice(None), slice(None, -1)), (slice(None), slice(1, None)))):
+            nb = arr[src]
+            take = empty[dst] & (nb > 0)
+            arr[dst][take] = nb[take]
+            empty[dst] &= ~take
+    return arr
+
+
+def fill_farmlands(farm, world, first_id, max_id=254):
+    """Mark som ännu saknar markområde (skog långt från fälten, tätorter, vägar och vatten) delas i
+    rutor om OTHER_LAND_CELL m, med ett eget köpbart markområde per ruta. Spelet låter alla bygga och
+    fälla träd på mark utan markområde, så hela kartan måste täckas. Små rester (under MIN_OTHER_HA)
+    går till närmaste markområde. Byggen på vägar och vatten stoppas ändå av placementCollision.
+    Returnerar (lagret, antal nya markområden)."""
+    res = farm.shape[0]
+    px = world.size / res
+    out = farm.copy()
+    ys, xs = np.nonzero(out == 0)
+    if not len(ys):
+        return out, 0
+    cell = OTHER_LAND_CELL
+    while True:
+        k = max(1, int(round(cell / px)))
+        cols = -(-res // k)
+        cid = (ys // k) * cols + xs // k
+        big = np.nonzero(np.bincount(cid, minlength=cols * cols) * px * px / 10_000 >= MIN_OTHER_HA)[0]
+        if first_id + len(big) - 1 <= max_id:
+            break
+        cell *= 1.25                                        # för många rutor: större rutor
+    ids = np.zeros(cols * cols, np.int32)
+    ids[big] = np.arange(first_id, first_id + len(big))
+    out[ys, xs] = ids[cid]
+    return spread(out, 2 * res), len(big)
 
 
 def load_editor_buildings(project, world):
