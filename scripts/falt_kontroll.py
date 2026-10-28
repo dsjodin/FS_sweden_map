@@ -78,7 +78,21 @@ def main():
         inside = contains_xy(poly, gx, gz)
         sub = farm[np.clip(rws, 0, farm.shape[0] - 1)][:, np.clip(cols, 0, farm.shape[1] - 1)]
         own = float((sub[inside] == i).mean()) if inside.any() else 0.0
+        ring = pts + pts[:1]
+        edges = [((ring[k + 1][0] - ring[k][0]) ** 2 + (ring[k + 1][1] - ring[k][1]) ** 2) ** 0.5
+                 for k in range(len(pts))]
+        angles = []
+        for k in range(len(pts)):                       # inre vinkel vid varje hörn, grader
+            ax, az = pts[k - 1][0] - pts[k][0], pts[k - 1][1] - pts[k][1]
+            bx, bz = pts[(k + 1) % len(pts)][0] - pts[k][0], pts[(k + 1) % len(pts)][1] - pts[k][1]
+            cos = (ax * bx + az * bz) / max(1e-9, (ax * ax + az * az) ** 0.5 * (bx * bx + bz * bz) ** 0.5)
+            angles.append(float(np.degrees(np.arccos(np.clip(cos, -1, 1)))))
+        concave = sum(1 for k in range(len(pts))
+                      if ((pts[k][0] - pts[k - 1][0]) * (pts[(k + 1) % len(pts)][1] - pts[k][1])
+                          - (pts[k][1] - pts[k - 1][1]) * (pts[(k + 1) % len(pts)][0] - pts[k][0])) < 0)
         rows.append({"nr": i, "ha": poly.area / 1e4, "hörn": len(pts), "egen": own,
+                     "kortast": min(edges), "spetsigast": min(angles), "konkava": concave,
+                     "konvex": poly.area / poly.convex_hull.area,
                      "nod": at(fx, fz), "medel": at(sum(xs) / len(xs), sum(zs) / len(zs)),
                      "rekt": at((x0 + x1) / 2, (z0 + z1) / 2), "första": at(*pts[0]),
                      "tyngd": at(poly.centroid.x, poly.centroid.y)})
@@ -86,12 +100,17 @@ def main():
     for key in ("nod", "medel", "rekt", "första", "tyngd"):
         print(f"  {key:7s} {sum(r[key] != r['nr'] for r in rows)}")
     print(f"  under 90 % av fältet på eget område: {sum(r['egen'] < 0.9 for r in rows)}")
+    print(f"Fältens form ({len(rows)} fält, antal under varje gräns):")
+    for key, limits in (("hörn", (10, 15, 20, 25, 30)), ("kortast", (1, 1.5, 2, 3, 5)),
+                        ("spetsigast", (10, 20, 30, 45)), ("konkava", (1, 3, 5, 10)),
+                        ("konvex", (0.8, 0.9, 0.95, 0.99))):
+        print(f"  {key}: " + ", ".join(f"under {v}: {sum(r[key] < v for r in rows)}" for v in limits))
     show = [r for r in rows if r["nr"] in args.falt] if args.falt else []
     if show:
-        print("\nnr     ha  hörn  egen%  nod  medel  rekt  första  tyngd")
+        print("\nnr     ha  hörn  kortast  spetsigast  konkava  konvex")
         for r in show:
-            print(f"{r['nr']:3d} {r['ha']:6.1f} {r['hörn']:5d} {r['egen'] * 100:6.0f} {r['nod']:4d} {r['medel']:6d}"
-                  f" {r['rekt']:5d} {r['första']:7d} {r['tyngd']:6d}")
+            print(f"{r['nr']:3d} {r['ha']:6.1f} {r['hörn']:5d} {r['kortast']:8.1f} {r['spetsigast']:11.0f}"
+                  f" {r['konkava']:8d} {r['konvex']:7.2f}")
     return 0
 
 
