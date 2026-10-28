@@ -94,6 +94,7 @@ MIN_OTHER_HA = 3.0           # ha: mindre rester går till närmaste markområde
 # fastigheter på 50-100 ha. 15 000 € motsvarar ungefär svenskt snittpris på åkermark (cirka 150 000 kr/ha).
 # Kan ändras per karta med "markpris_per_ha" i maps/<namn>/area.json.
 LAND_PRICE_PER_HA = 15000
+START_MAX_HA = 80.0          # ha: största fastighet som väljs som startgård (om inte "startfastighet" anges)
 LAND_PRICE_SCALE = {"åker": 1.0, "skog": 0.6, "tomt": 1.5, "övrigt": 0.5}   # del av åkerpriset
 NO_BUILD_WATER = 2.5         # m på var sida om diken och bäckar där man inte får bygga
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
@@ -304,7 +305,11 @@ def build(project, args):
     blocks = {}
     for geom, block, _ in fields:
         blocks.setdefault(block, []).append(geom)
-    start_block = min(blocks, key=lambda b: unary_union(blocks[b]).distance(start_pt))
+    wanted = (cfg_map.get("startfastighet") or "").strip().upper()
+    if wanted and wanted not in blocks:
+        sys.exit(f"startfastighet {wanted} i area.json har inga fält inom kartan (eller saknas i fastigheter.geojson).")
+    small = [b for b in blocks if b not in properties or properties[b].area / 10_000 <= START_MAX_HA]
+    start_block = wanted or min(small or blocks, key=lambda b: unary_union(blocks[b]).distance(start_pt))
     order = [start_block] + sorted(b for b in blocks if b != start_block)
     if len(order) > 254:
         sys.exit(f"{len(order)} block med fält, men farmland-lagret rymmer högst 254.")
@@ -411,9 +416,10 @@ def build(project, args):
     ground = Image.new("L", (N, N), 0)
     farm_img = Image.new("L", (cfg.il_res["farmland"],) * 2, 0)
     dg, dfarm = ImageDraw.Draw(ground), ImageDraw.Draw(farm_img)
-    for key in order:                                        # största först, så att enklaver hamnar ovanpå
-        if key in properties:
-            draw_polygon(dfarm, properties[key], world, farm_img.width, farmland_id[key])
+    # Största fastigheten först: en fastighets hål målas tomma, så mindre fastigheter (enklaver) i hålen
+    # måste målas efter, annars suddas de ut.
+    for key in sorted((k for k in order if k in properties), key=lambda k: -properties[k].area):
+        draw_polygon(dfarm, properties[key], world, farm_img.width, farmland_id[key])
     for geom, block, _ in fields:
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
         draw_polygon(dfarm, geom.buffer(FIELD_SHRINK), world, farm_img.width, farmland_id[block])
@@ -426,7 +432,6 @@ def build(project, args):
     near_fields = np.mean(farm_arr > 0)
     farm_arr, n_other = fill_farmlands(farm_arr, world, osm, len(order) + 1)
     binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), farm_arr)
-    save_farmland_image(project.build / "markomraden.png", farm_arr)
     binfmt.paint_grle(str(data_dir / "infoLayer_placementCollision.grle"), no_build.astype(np.uint8))
     print(f"Mark: {near_fields:.0%} av kartan hör till {len(order)} "
           f"{'fastigheter' if properties else 'jordbruksblock'}, resten till {n_other} skiften "
@@ -445,6 +450,14 @@ def build(project, args):
             return f"{v:,.0f} €".replace(",", " ")
         print(f"Markpris: {eur(price)}/ha för åker, skog och annan mark billigare. Markområdena kostar "
               f"{eur(costs[len(costs) // 2])} i mitten och {eur(costs[-1])} som mest")
+    # Kontroll, bara på servern (inte i modden): bild med numren och lista nummer -> fastighet och pris.
+    names = {i: (k if k in properties else f"jordbruksblock {k}") for i, k in enumerate(order, 1)}
+    save_farmland_image(project.build / "markomraden.png", farm_arr)
+    (project.build / "markomraden.txt").write_text(
+        "nr\tha\tpris €\tfastighet\n" + "".join(
+            f"{i}\t{ha[i]:.1f}\t{ha[i] * price * scales.get(i, 1.0):.0f}\t"
+            f"{names.get(i, 'övrig mark')}{' (startgård)' if i == 1 else ''}\n"
+            for i in range(1, len(order) + n_other + 1) if ha[i] > 0), encoding="utf-8")
     placements = load_placements(project) + [dict(pl, position=[pl["position"][0], site.height, pl["position"][2]])
                                              for site, pl in edited]
     obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements)
@@ -464,9 +477,11 @@ def build(project, args):
             if p.is_file():
                 z.write(p, p.relative_to(mod_dir))
 
-    owned_ha = sum(g.area for g in blocks[start_block]) / 10_000
+    owned_ha = ha[1]
     print(f"\n{title}: {len(fields)} fält i {len(order)} farmlands, terräng {base:.1f}–{real_max:.1f} m ö.h.")
-    print(f"Startgård: {'fastighet' if start_block in properties else 'block'} {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
+    print(f"Startgård: {'fastighet' if start_block in properties else 'block'} {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha mark"
+          + ("" if wanted else f" (närmast startpunkten av dem under {START_MAX_HA:.0f} ha; välj en annan med "
+                                '"startfastighet" i area.json)'))
     print(f"Vatten: {sum(m[0].startswith('water') for m in water_meshes)} vattenytor, "
           f"{sum(m[0].startswith('stream') for m in water_meshes)} diken och bäckar")
     print(f"Träd: {len(trees)}" + (f" (varav {len(loose)} utanför skogen)" if loose else "")
@@ -624,7 +639,7 @@ def price_scales(farm, fields, osm, world):
 
 def save_farmland_image(path, farm):
     """Markområdena som bild för kontroll (build/<namn>/markomraden.png): en färg per område,
-    startgårdens område (1) rött, gränser svarta."""
+    startgårdens område (1) rött, gränser svarta och områdets nummer i dess största del."""
     rgb = np.random.default_rng(5).integers(90, 230, (256, 3)).astype(np.uint8)
     rgb[0], rgb[1] = (255, 255, 255), (220, 30, 30)
     img = rgb[farm]
@@ -632,7 +647,34 @@ def save_farmland_image(path, farm):
     edge[1:, :] |= farm[1:, :] != farm[:-1, :]
     edge[:, 1:] |= farm[:, 1:] != farm[:, :-1]
     img[edge] = 0
-    Image.fromarray(img).save(path)
+    im = Image.fromarray(img)
+    from PIL import ImageFont
+    try:
+        font = ImageFont.load_default(size=26)
+    except TypeError:                                       # äldre Pillow
+        font = ImageFont.load_default()
+    draw = ImageDraw.Draw(im)
+    step = 8                                                # sök platsen för numret i ett glesare rutnät
+    small = farm[::step, ::step]
+    depth = np.zeros(small.shape, np.int32)                 # avstånd in från områdets kant, i steg
+    for _ in range(small.shape[0] // 2):
+        same = small > 0
+        same[1:, :] &= small[1:, :] == small[:-1, :]
+        same[:-1, :] &= small[:-1, :] == small[1:, :]
+        same[:, 1:] &= small[:, 1:] == small[:, :-1]
+        same[:, :-1] &= small[:, :-1] == small[:, 1:]
+        if not same.any():
+            break
+        depth += same
+        small = np.where(same, small, 0)
+    for i in np.unique(farm[::step, ::step]):
+        if i == 0:
+            continue
+        d = np.where(farm[::step, ::step] == i, depth, -1)
+        y, x = np.unravel_index(np.argmax(d), d.shape)
+        draw.text((x * step, y * step), str(int(i)), fill=(0, 0, 0), font=font, anchor="mm",
+                  stroke_width=3, stroke_fill=(255, 255, 255))
+    im.save(path)
 
 
 def spread(arr, steps):
