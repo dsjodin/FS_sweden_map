@@ -3,7 +3,9 @@
 data/<namn>/fastigheter.geojson: fastighetsområden som polygoner (WGS 84 eller SWEREF 99 TM) med
 beteckningen i TITEL och typen i BESKRIVNING ("Fastighetsområde", "Samfällighetsområde", ...).
 
-- Varje fastighet, med alla sina delar (samma beteckning), blir ett köpbart markområde.
+- FS25 tillåter bara ett fält per markområde, så varje fält blir ett köpbart markområde och resten
+  av fastigheten (alla delar med samma beteckning) går till fastighetens närmaste fält
+  (build_map.paint_farmlands). En fastighet utan fält blir ett eget markområde.
 - Samfälligheter och områden utan beteckning (vägar, diken, gemensam mark) får inget eget
   markområde. De fylls av grannarna, liksom fastigheter under MIN_HA.
 - Fält som ligger på flera fastigheter delas längs gränsen när den andra fastighetens del är

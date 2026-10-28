@@ -72,9 +72,11 @@ säljs som gran. Se `python scripts/i3d_info.py <zip>` för hur ett paket är up
 ### Fastighetsgränser som markområden
 
 Lägg fastighetsområdena som GeoJSON i `data/<namn>/fastigheter.geojson` (polygoner med
-beteckningen i `TITEL` och typen i `BESKRIVNING`). Då blir varje fastighet ett köpbart
-markområde i spelet, fält som ligger på två fastigheter delas längs gränsen, och
-fastigheten med fält närmast startpunkten ägs från start. Samfälligheter, vägar och
+beteckningen i `TITEL` och typen i `BESKRIVNING`). FS25 tillåter bara ett fält per
+markområde, så varje fält blir ett köpbart markområde, och resten av fastigheten (skog,
+gårdsplan) går till dess närmaste fält. Fastigheter utan fält blir egna markområden, fält
+som ligger på två fastigheter delas längs gränsen, och fälten på fastigheten närmast
+startpunkten ägs från start. Samfälligheter, vägar och
 tomter under 0,5 ha går till grannarna. Beteckningarna kommer inte med i modden
 (se `scripts/fastigheter.py`). Utan filen används Jordbruksverkets block.
 

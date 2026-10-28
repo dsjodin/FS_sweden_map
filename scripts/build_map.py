@@ -7,10 +7,12 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
 - terräng från Lantmäteriets höjdmodell (data/<namn>/lm/hojd/dtm_area.tif)
 - fält från Jordbruksverkets skiften: fältnoder i i3d-filen, kultiverad
   åkerjord i densityMap_ground
-- farmlands = fastigheter (data/<namn>/fastigheter.geojson, se fastigheter.py)
-  eller annars jordbruksblock: varje fastighet eller block blir ett köpbart
-  markområde. Det med fält närmast startpunkten ägs från start. Övrig mark
-  delas i skiften längs vägar, vattendrag och skogskanter.
+- farmlands: FS25 tillåter ett fält per markområde, så varje fält blir ett
+  köpbart markområde (fält N på markområde N). Med fastighetsgränser
+  (data/<namn>/fastigheter.geojson, se fastigheter.py) går resten av en
+  fastighet till dess närmaste fält, och fastigheter utan fält blir egna
+  markområden. Fälten på fastigheten närmast startpunkten ägs från start.
+  Övrig mark delas i skiften längs vägar, vattendrag och skogskanter.
 - marktyper (skog, vatten, bebyggelse, öppen mark) från Lantmäteriets
   Marktäcke eller Topografi 10, vattendrag, vägar och byggnader från
   Topografi 10 (data/topografi10/, se landcover.py). Det som saknas tas från
@@ -297,8 +299,11 @@ def build(project, args):
         print(f"  Fastigheter: {len(properties)} inom kartan, {len(fields)} fält efter delning längs gränserna")
     labels = ground_labels(osm, world, fields, cfg.weight_res, drawn.overrides(drawings))
 
-    # Farmlands: ett per fastighet (fastigheter.py) eller annars per jordbruksblock med fält.
-    # Startgården = fastigheten eller blocket med fält närmast startpunkten.
+    # Farmlands. FS25 tillåter bara ett fält per markområde ("There already exists field X on farmland Y",
+    # fält nummer två och framåt försvinner), så varje fält blir ett eget markområde, med fält nummer N på
+    # markområde N. Resten av en fastighet går till fastighetens närmaste fält; fastigheter utan fält blir
+    # egna markområden (fastigheter.py). Startgården = fälten på fastigheten (eller jordbruksblocket)
+    # närmast startpunkten.
     start = cfg_map.get("start") or cfg_map["center"]
     se, sn = to_sweref(start["lon"], start["lat"])
     start_pt = Point(se, sn)
@@ -310,11 +315,13 @@ def build(project, args):
         sys.exit(f"startfastighet {wanted} i area.json har inga fält inom kartan (eller saknas i fastigheter.geojson).")
     small = [b for b in blocks if b not in properties or properties[b].area / 10_000 <= START_MAX_HA]
     start_block = wanted or min(small or blocks, key=lambda b: unary_union(blocks[b]).distance(start_pt))
-    order = [start_block] + sorted(b for b in blocks if b != start_block)
-    if len(order) > 254:
-        sys.exit(f"{len(order)} block med fält, men farmland-lagret rymmer högst 254.")
-    order += [k for k in properties if k not in blocks][:254 - len(order)]   # fastigheter utan fält, största först
-    farmland_id = {b: i + 1 for i, b in enumerate(order)}
+    fields = [f for f in fields if f[1] == start_block] + [f for f in fields if f[1] != start_block]
+    n_start = len(blocks[start_block])
+    if len(fields) > 254:
+        sys.exit(f"{len(fields)} fält, men FS25 tillåter bara ett fält per markområde och högst 254 markområden.")
+    lone = [k for k in properties if k not in blocks][:254 - len(fields)]   # fastigheter utan fält, största först
+    lone_id = {k: len(fields) + 1 + j for j, k in enumerate(lone)}
+    n_named = len(fields) + len(lone)
 
     print("Gård, spannmålsmottagning och planering ...")
     areas, roads, _ww, _rail, buildings, _pl = osm
@@ -414,27 +421,20 @@ def build(project, args):
 
     N = cfg.density_res
     ground = Image.new("L", (N, N), 0)
-    farm_img = Image.new("L", (cfg.il_res["farmland"],) * 2, 0)
-    dg, dfarm = ImageDraw.Draw(ground), ImageDraw.Draw(farm_img)
-    # Största fastigheten först: en fastighets hål målas tomma, så mindre fastigheter (enklaver) i hålen
-    # måste målas efter, annars suddas de ut.
-    for key in sorted((k for k in order if k in properties), key=lambda k: -properties[k].area):
-        draw_polygon(dfarm, properties[key], world, farm_img.width, farmland_id[key])
-    for geom, block, _ in fields:
+    dg = ImageDraw.Draw(ground)
+    for geom, _block, _ in fields:
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
-        draw_polygon(dfarm, geom.buffer(FIELD_SHRINK), world, farm_img.width, farmland_id[block])
-    draw_polygon(dfarm, farm.box, world, farm_img.width, 1)               # gården hör till startgården
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
-    farm_arr = np.array(farm_img, dtype=np.uint8)
+    farm_arr = paint_farmlands(fields, properties, lone_id, farm.box, world, cfg.il_res["farmland"])
     if not properties:
         farm_arr = extend_farmlands(farm_arr, no_build, world, osm)
     near_fields = np.mean(farm_arr > 0)
-    farm_arr, n_other = fill_farmlands(farm_arr, world, osm, len(order) + 1)
+    farm_arr, n_other = fill_farmlands(farm_arr, world, osm, n_named + 1)
     binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), farm_arr)
     binfmt.paint_grle(str(data_dir / "infoLayer_placementCollision.grle"), no_build.astype(np.uint8))
-    print(f"Mark: {near_fields:.0%} av kartan hör till {len(order)} "
-          f"{'fastigheter' if properties else 'jordbruksblock'}, resten till {n_other} skiften "
+    print(f"Mark: {near_fields:.0%} av kartan hör till {len(fields)} fält"
+          + (f" och {len(lone)} fastigheter utan fält" if properties else "") + f", resten till {n_other} skiften "
           f"(skog, tätort och annan mark). {np.mean(no_build):.0%} spärrad för bygge "
           "(vägar, vatten, diken, järnväg)")
 
@@ -442,22 +442,23 @@ def build(project, args):
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
     price = float(cfg_map.get("markpris_per_ha", LAND_PRICE_PER_HA))
     scales = price_scales(farm_arr, fields, osm, world)
-    write_farmlands(maps_dir / "farmlands.xml", len(order) + n_other, price, scales)
+    write_farmlands(maps_dir / "farmlands.xml", n_named + n_other, price, scales, n_start)
     ha = np.bincount(farm_arr.ravel(), minlength=256) * (world.size / farm_arr.shape[0]) ** 2 / 10_000
-    costs = sorted(ha[i] * price * scales.get(i, 1.0) for i in range(2, len(order) + n_other + 1))
+    costs = sorted(ha[i] * price * scales.get(i, 1.0) for i in range(n_start + 1, n_named + n_other + 1))
     if costs:
         def eur(v):
             return f"{v:,.0f} €".replace(",", " ")
         print(f"Markpris: {eur(price)}/ha för åker, skog och annan mark billigare. Markområdena kostar "
               f"{eur(costs[len(costs) // 2])} i mitten och {eur(costs[-1])} som mest")
     # Kontroll, bara på servern (inte i modden): bild med numren och lista nummer -> fastighet och pris.
-    names = {i: (k if k in properties else f"jordbruksblock {k}") for i, k in enumerate(order, 1)}
+    names = {i: f"fält {i}, " + (k if k in properties else f"jordbruksblock {k}") for i, (_, k, _) in enumerate(fields, 1)}
+    names.update({i: k for k, i in lone_id.items()})
     save_farmland_image(project.build / "markomraden.png", farm_arr)
     (project.build / "markomraden.txt").write_text(
         "nr\tha\tpris €\tfastighet\n" + "".join(
             f"{i}\t{ha[i]:.1f}\t{ha[i] * price * scales.get(i, 1.0):.0f}\t"
-            f"{names.get(i, 'övrig mark')}{' (startgård)' if i == 1 else ''}\n"
-            for i in range(1, len(order) + n_other + 1) if ha[i] > 0), encoding="utf-8")
+            f"{names.get(i, 'övrig mark')}{' (startgård)' if i <= n_start else ''}\n"
+            for i in range(1, n_named + n_other + 1) if ha[i] > 0), encoding="utf-8")
     placements = load_placements(project) + [dict(pl, position=[pl["position"][0], site.height, pl["position"][2]])
                                              for site, pl in edited]
     obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements)
@@ -477,8 +478,8 @@ def build(project, args):
             if p.is_file():
                 z.write(p, p.relative_to(mod_dir))
 
-    owned_ha = ha[1]
-    print(f"\n{title}: {len(fields)} fält i {len(order)} farmlands, terräng {base:.1f}–{real_max:.1f} m ö.h.")
+    owned_ha = ha[1:n_start + 1].sum()
+    print(f"\n{title}: {len(fields)} fält i {n_named + n_other} markområden, terräng {base:.1f}–{real_max:.1f} m ö.h.")
     print(f"Startgård: {'fastighet' if start_block in properties else 'block'} {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha mark"
           + ("" if wanted else f" (närmast startpunkten av dem under {START_MAX_HA:.0f} ha; välj en annan med "
                                 '"startfastighet" i area.json)'))
@@ -574,9 +575,10 @@ def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm,
     tree.write(i3d_path, encoding="iso-8859-1", xml_declaration=True)
 
 
-def write_farmlands(path, count, price_per_ha, scales):
+def write_farmlands(path, count, price_per_ha, scales, owned=1):
+    """Markområde 1..owned ägs från start (startgårdens fält)."""
     rows = [f'        <farmland id="{i}" priceScale="{scales.get(i, 1.0):.2f}" npcName="FARMER"'
-            + (' defaultFarmProperty="true"' if i == 1 else "") + " />" for i in range(1, count + 1)]
+            + (' defaultFarmProperty="true"' if i <= owned else "") + " />" for i in range(1, count + 1)]
     path.write_text(
         '<?xml version="1.0" encoding="utf-8" standalone="no" ?>\n<map>\n'
         '    <farmlands densityMapFilename="maps/data/infoLayer_farmland.grle" numChannels="8" '
@@ -600,6 +602,45 @@ def no_build_mask(osm, world, res):
     geoms += [line.buffer(3) for line in rail if line.intersects(sq)]
     return rasterize(((g, 1) for g in geoms), out_shape=(res, res), transform=info_transform(world, res),
                      dtype="uint8") > 0
+
+
+def paint_farmlands(fields, properties, lone_id, farm_box, world, res):
+    """Markområdeslagret: fält nummer i på markområde i, fastigheter utan fält (lone_id) som egna
+    markområden och resten av varje fastighet till fastighetens närmaste fält. Fastigheterna målas
+    som zoner, största först: en fastighets hål målas tomma, så mindre fastigheter i hålen måste
+    målas efter. Startgårdens planade yta hör till markområde 1. Mark utanför fastigheterna lämnas 0."""
+    farm_img = Image.new("L", (res, res), 0)
+    zone_img = Image.new("I", (res, res), 0)
+    dfarm, dzone = ImageDraw.Draw(farm_img), ImageDraw.Draw(zone_img)
+    zone_of = {k: j + 1 for j, k in enumerate(properties)}               # properties är sorterade största först
+    for key in properties:
+        draw_polygon(dzone, properties[key], world, res, zone_of[key])
+        if key in lone_id:
+            draw_polygon(dfarm, properties[key], world, res, lone_id[key])
+    for i, (geom, _block, _) in enumerate(fields, 1):
+        draw_polygon(dfarm, geom.buffer(FIELD_SHRINK), world, res, i)
+    draw_polygon(dfarm, farm_box, world, res, 1)
+    farm = np.array(farm_img, dtype=np.uint8)
+    if not properties:
+        return farm
+    zone = np.array(zone_img, dtype=np.int32)
+    zone_of_id = np.zeros(256, np.int32)                                    # markområde -> fastighetens zon
+    biggest = np.zeros(len(properties) + 1, np.int32)                       # zon -> fastighetens största fält
+    for i, (geom, block, _) in sorted(enumerate(fields, 1), key=lambda t: t[1][0].area):
+        if block in zone_of:
+            zone_of_id[i] = zone_of[block]
+            biggest[zone_of[block]] = i                                     # störst sist
+    for key, i in lone_id.items():
+        zone_of_id[i] = zone_of[key]
+    # Resten av fastigheten till dess närmaste fält: först i halv upplösning (snabbare), sedan kanterna.
+    small = spread(farm[::2, ::2].copy(), res, zone[::2, ::2], zone_of_id)
+    up = np.repeat(np.repeat(small, 2, axis=0), 2, axis=1)[:res, :res]
+    take = (farm == 0) & (up > 0) & (zone_of_id[up] == zone)
+    farm[take] = up[take]
+    farm = spread(farm, 8, zone, zone_of_id)
+    rest = (farm == 0) & (biggest[zone] > 0)                                # delar som inte nås: största fältet
+    farm[rest] = biggest[zone[rest]]
+    return farm
 
 
 def extend_farmlands(farm, no_build, world, osm):
@@ -677,20 +718,28 @@ def save_farmland_image(path, farm):
     im.save(path)
 
 
-def spread(arr, steps):
-    """Fyller nollor med grannens markområde, en pixel per steg (åt fyra håll)."""
+def spread(arr, steps, zone=None, zone_of_id=None):
+    """Fyller nollor med grannens markområde, en pixel per steg (åt fyra håll). Med zone (zon per pixel)
+    och zone_of_id (zon per markområde) sprids ett markområde bara inom sin egen zon."""
     for _ in range(steps):
         empty = arr == 0
+        if zone is not None:
+            empty &= zone > 0
         if not empty.any():
             break
+        before = int(empty.sum())
         for src, dst in (((slice(1, None), slice(None)), (slice(None, -1), slice(None))),
                          ((slice(None, -1), slice(None)), (slice(1, None), slice(None))),
                          ((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
                          ((slice(None), slice(None, -1)), (slice(None), slice(1, None)))):
             nb = arr[src]
             take = empty[dst] & (nb > 0)
+            if zone is not None:
+                take &= zone_of_id[nb] == zone[dst]
             arr[dst][take] = nb[take]
             empty[dst] &= ~take
+        if int(empty.sum()) == before:                      # inget mer att nå
+            break
     return arr
 
 
