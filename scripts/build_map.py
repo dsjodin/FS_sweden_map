@@ -90,6 +90,11 @@ ARM_WIDTH = 12.0             # m: delar av ett fält som är smalare än så kli
 FARMLAND_REACH = 300.0       # m: mark utan fält hör till närmaste jordbruksblock inom detta avstånd
 OTHER_LAND_CELL = 600.0      # m: största sida på skiften utanför jordbruksblocken
 MIN_OTHER_HA = 3.0           # ha: mindre rester går till närmaste markområde
+# Markpris i spelet (€/ha för åker). Spelets egna kartor har 60 000, vilket ger miljonbelopp för svenska
+# fastigheter på 50-100 ha. 15 000 € motsvarar ungefär svenskt snittpris på åkermark (cirka 150 000 kr/ha).
+# Kan ändras per karta med "markpris_per_ha" i maps/<namn>/area.json.
+LAND_PRICE_PER_HA = 15000
+LAND_PRICE_SCALE = {"åker": 1.0, "skog": 0.6, "tomt": 1.5, "övrigt": 0.5}   # del av åkerpriset
 NO_BUILD_WATER = 2.5         # m på var sida om diken och bäckar där man inte får bygga
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
@@ -430,7 +435,16 @@ def build(project, args):
 
     # Konfiguration: fs25-empty-map:s filer, sedan våra farmlands, modDesc-text och översiktskarta.
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
-    write_farmlands(maps_dir / "farmlands.xml", len(order) + n_other)
+    price = float(cfg_map.get("markpris_per_ha", LAND_PRICE_PER_HA))
+    scales = price_scales(farm_arr, fields, osm, world)
+    write_farmlands(maps_dir / "farmlands.xml", len(order) + n_other, price, scales)
+    ha = np.bincount(farm_arr.ravel(), minlength=256) * (world.size / farm_arr.shape[0]) ** 2 / 10_000
+    costs = sorted(ha[i] * price * scales.get(i, 1.0) for i in range(2, len(order) + n_other + 1))
+    if costs:
+        def eur(v):
+            return f"{v:,.0f} €".replace(",", " ")
+        print(f"Markpris: {eur(price)}/ha för åker, skog och annan mark billigare. Markområdena kostar "
+              f"{eur(costs[len(costs) // 2])} i mitten och {eur(costs[-1])} som mest")
     placements = load_placements(project) + [dict(pl, position=[pl["position"][0], site.height, pl["position"][2]])
                                              for site, pl in edited]
     obj.write_placeables(maps_dir / "placeables.xml", farm, mill, world, placements)
@@ -545,12 +559,13 @@ def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm,
     tree.write(i3d_path, encoding="iso-8859-1", xml_declaration=True)
 
 
-def write_farmlands(path, count):
-    rows = [f'        <farmland id="1" priceScale="1" npcName="FARMER" defaultFarmProperty="true" />']
-    rows += [f'        <farmland id="{i}" priceScale="1" npcName="FARMER" />' for i in range(2, count + 1)]
+def write_farmlands(path, count, price_per_ha, scales):
+    rows = [f'        <farmland id="{i}" priceScale="{scales.get(i, 1.0):.2f}" npcName="FARMER"'
+            + (' defaultFarmProperty="true"' if i == 1 else "") + " />" for i in range(1, count + 1)]
     path.write_text(
         '<?xml version="1.0" encoding="utf-8" standalone="no" ?>\n<map>\n'
-        '    <farmlands densityMapFilename="maps/data/infoLayer_farmland.grle" numChannels="8" pricePerHa="60000">\n'
+        '    <farmlands densityMapFilename="maps/data/infoLayer_farmland.grle" numChannels="8" '
+        f'pricePerHa="{price_per_ha:.0f}">\n'
         + "\n".join(rows) + "\n    </farmlands>\n</map>\n", encoding="utf-8")
 
 
@@ -587,6 +602,24 @@ def extend_farmlands(farm, no_build, world, osm):
         blocked |= rasterize(((g, 1) for g in town), out_shape=farm.shape,
                              transform=info_transform(world, res), dtype="uint8") > 0
     return np.where(farm > 0, farm, np.where(blocked, 0, grown)).astype(np.uint8)
+
+
+def price_scales(farm, fields, osm, world):
+    """Prisfaktor per markområde: ytvägt medel av LAND_PRICE_SCALE för marken i området
+    (åker, skog, gårdsplan och tätort, övrigt)."""
+    from rasterio.features import rasterize
+    res = farm.shape[0]
+    tr = info_transform(world, res)
+    kind = np.zeros(farm.shape, np.uint8)                   # 0 = övrigt (öppen mark, vägar, vatten)
+    for k, geoms in ((1, [g for c, g in osm[0] if c in landcover.FORESTS]),
+                     (2, [g for c, g in osm[0] if c in ("farmyard", "residential")]),
+                     (3, [g for g, _, _ in fields])):
+        if geoms:
+            kind[rasterize(((g, 1) for g in geoms), out_shape=farm.shape, transform=tr, dtype="uint8") > 0] = k
+    weight = np.array([LAND_PRICE_SCALE[k] for k in ("övrigt", "skog", "tomt", "åker")])[kind]
+    sums = np.bincount(farm.ravel(), weights=weight.ravel(), minlength=256)
+    counts = np.bincount(farm.ravel(), minlength=256)
+    return {i: float(sums[i] / counts[i]) for i in range(1, 256) if counts[i]}
 
 
 def save_farmland_image(path, farm):
