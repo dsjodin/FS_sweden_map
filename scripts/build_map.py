@@ -7,8 +7,10 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
 - terräng från Lantmäteriets höjdmodell (data/<namn>/lm/hojd/dtm_area.tif)
 - fält från Jordbruksverkets skiften: fältnoder i i3d-filen, kultiverad
   åkerjord i densityMap_ground
-- farmlands = jordbruksblock: varje block som har fält blir ett köpbart
-  markområde. Blocket närmast startpunkten ägs från start.
+- farmlands = fastigheter (data/<namn>/fastigheter.geojson, se fastigheter.py)
+  eller annars jordbruksblock: varje fastighet eller block blir ett köpbart
+  markområde. Det med fält närmast startpunkten ägs från start. Övrig mark
+  delas i skiften längs vägar, vattendrag och skogskanter.
 - marktyper (skog, vatten, bebyggelse, öppen mark) från Lantmäteriets
   Marktäcke eller Topografi 10, vattendrag, vägar och byggnader från
   Topografi 10 (data/topografi10/, se landcover.py). Det som saknas tas från
@@ -63,6 +65,7 @@ import landcover  # noqa: E402
 import water  # noqa: E402
 import drawings as drawn  # noqa: E402
 import prefab_trees  # noqa: E402
+import fastigheter  # noqa: E402
 
 # Marklager (namn i spelets standarduppsättning) i prioritetsordning: senare vinner.
 GROUND = [
@@ -282,9 +285,14 @@ def build(project, args):
     cut = obstacles(osm[1], osm[2], world, osm[0])
     fields = drawn.apply_fields(load_fields(project, world, cut), drawings, cut, world.square(FIELD_EDGE),
                                 FIELD_SHRINK)
+    properties = fastigheter.load(project, world)          # verkliga fastighetsgränser, om de finns
+    if properties:
+        fields = fastigheter.assign_fields(fields, properties, MIN_FIELD_HA)
+        print(f"  Fastigheter: {len(properties)} inom kartan, {len(fields)} fält efter delning längs gränserna")
     labels = ground_labels(osm, world, fields, cfg.weight_res, drawn.overrides(drawings))
 
-    # Farmlands: ett per jordbruksblock med fält. Startgården = blocket närmast startpunkten.
+    # Farmlands: ett per fastighet (fastigheter.py) eller annars per jordbruksblock med fält.
+    # Startgården = fastigheten eller blocket med fält närmast startpunkten.
     start = cfg_map.get("start") or cfg_map["center"]
     se, sn = to_sweref(start["lon"], start["lat"])
     start_pt = Point(se, sn)
@@ -295,6 +303,7 @@ def build(project, args):
     order = [start_block] + sorted(b for b in blocks if b != start_block)
     if len(order) > 254:
         sys.exit(f"{len(order)} block med fält, men farmland-lagret rymmer högst 254.")
+    order += [k for k in properties if k not in blocks][:254 - len(order)]   # fastigheter utan fält, största först
     farmland_id = {b: i + 1 for i, b in enumerate(order)}
 
     print("Gård, spannmålsmottagning och planering ...")
@@ -397,18 +406,24 @@ def build(project, args):
     ground = Image.new("L", (N, N), 0)
     farm_img = Image.new("L", (cfg.il_res["farmland"],) * 2, 0)
     dg, dfarm = ImageDraw.Draw(ground), ImageDraw.Draw(farm_img)
+    for key in order:                                        # största först, så att enklaver hamnar ovanpå
+        if key in properties:
+            draw_polygon(dfarm, properties[key], world, farm_img.width, farmland_id[key])
     for geom, block, _ in fields:
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
         draw_polygon(dfarm, geom.buffer(FIELD_SHRINK), world, farm_img.width, farmland_id[block])
     draw_polygon(dfarm, farm.box, world, farm_img.width, 1)               # gården hör till startgården
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
-    farm_arr = extend_farmlands(np.array(farm_img, dtype=np.uint8), no_build, world, osm)
+    farm_arr = np.array(farm_img, dtype=np.uint8)
+    if not properties:
+        farm_arr = extend_farmlands(farm_arr, no_build, world, osm)
     near_fields = np.mean(farm_arr > 0)
     farm_arr, n_other = fill_farmlands(farm_arr, world, osm, len(order) + 1)
     binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), farm_arr)
     binfmt.paint_grle(str(data_dir / "infoLayer_placementCollision.grle"), no_build.astype(np.uint8))
-    print(f"Mark: {near_fields:.0%} av kartan hör till jordbruksblocken, resten till {n_other} skiften "
+    print(f"Mark: {near_fields:.0%} av kartan hör till {len(order)} "
+          f"{'fastigheter' if properties else 'jordbruksblock'}, resten till {n_other} skiften "
           f"(skog, tätort och annan mark). {np.mean(no_build):.0%} spärrad för bygge "
           "(vägar, vatten, diken, järnväg)")
 
@@ -436,7 +451,7 @@ def build(project, args):
 
     owned_ha = sum(g.area for g in blocks[start_block]) / 10_000
     print(f"\n{title}: {len(fields)} fält i {len(order)} farmlands, terräng {base:.1f}–{real_max:.1f} m ö.h.")
-    print(f"Startgård: block {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
+    print(f"Startgård: {'fastighet' if start_block in properties else 'block'} {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha")
     print(f"Vatten: {sum(m[0].startswith('water') for m in water_meshes)} vattenytor, "
           f"{sum(m[0].startswith('stream') for m in water_meshes)} diken och bäckar")
     print(f"Träd: {len(trees)}" + (f" (varav {len(loose)} utanför skogen)" if loose else "")

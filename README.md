@@ -69,6 +69,15 @@ huvudträdet i barr- och blandskogen och kan väljas i byggeditorns Träd-läge.
 behöver ingen extra modd. Utan paketet blir det tall i stället. Granarna kan fällas och
 säljs som gran. Se `python scripts/i3d_info.py <zip>` för hur ett paket är uppbyggt.
 
+### Fastighetsgränser som markområden
+
+Lägg fastighetsområdena som GeoJSON i `data/<namn>/fastigheter.geojson` (polygoner med
+beteckningen i `TITEL` och typen i `BESKRIVNING`). Då blir varje fastighet ett köpbart
+markområde i spelet, fält som ligger på två fastigheter delas längs gränsen, och
+fastigheten med fält närmast startpunkten ägs från start. Samfälligheter, vägar och
+tomter under 0,5 ha går till grannarna. Beteckningarna kommer inte med i modden
+(se `scripts/fastigheter.py`). Utan filen används Jordbruksverkets block.
+
 ### Byggeditor: moddbyggnader på de verkliga byggnaderna
 
 ```bash
