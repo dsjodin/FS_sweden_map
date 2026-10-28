@@ -85,7 +85,7 @@ BUFFER_CODES = {77, 314}     # skyddszoner längs vattendrag: bara cirka 6 m bre
 MIN_FIELD_WIDTH = 15.0       # m medelbredd (2 × yta / omkrets); smalare remsor blir gräs, inte fält
 ARM_WIDTH = 12.0             # m: delar av ett fält som är smalare än så klipps bort
 FARMLAND_REACH = 300.0       # m: mark utan fält hör till närmaste jordbruksblock inom detta avstånd
-OTHER_LAND_CELL = 500.0      # m: resten av kartan blir markområden i rutor av den här storleken
+OTHER_LAND_CELL = 600.0      # m: största sida på skiften utanför jordbruksblocken
 MIN_OTHER_HA = 3.0           # ha: mindre rester går till närmaste markområde
 NO_BUILD_WATER = 2.5         # m på var sida om diken och bäckar där man inte får bygga
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
@@ -405,11 +405,12 @@ def build(project, args):
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
     farm_arr = extend_farmlands(np.array(farm_img, dtype=np.uint8), no_build, world, osm)
     near_fields = np.mean(farm_arr > 0)
-    farm_arr, n_other = fill_farmlands(farm_arr, world, len(order) + 1)
+    farm_arr, n_other = fill_farmlands(farm_arr, world, osm, len(order) + 1)
     binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), farm_arr)
     binfmt.paint_grle(str(data_dir / "infoLayer_placementCollision.grle"), no_build.astype(np.uint8))
-    print(f"Mark: {near_fields:.0%} av kartan hör till jordbruksblocken, resten till {n_other} andra markområden "
-          f"(skog, tätort). {np.mean(no_build):.0%} spärrad för bygge (vägar, vatten, diken, järnväg)")
+    print(f"Mark: {near_fields:.0%} av kartan hör till jordbruksblocken, resten till {n_other} skiften "
+          f"(skog, tätort och annan mark). {np.mean(no_build):.0%} spärrad för bygge "
+          "(vägar, vatten, diken, järnväg)")
 
     # Konfiguration: fs25-empty-map:s filer, sedan våra farmlands, modDesc-text och översiktskarta.
     gen_configs.build(cfg, str(mod_dir), str(maps_dir))
@@ -589,31 +590,39 @@ def spread(arr, steps):
     return arr
 
 
-def fill_farmlands(farm, world, first_id, max_id=254):
+def fill_farmlands(farm, world, osm, first_id, max_id=254):
     """Mark som ännu saknar markområde (skog långt från fälten, tätorter, vägar och vatten) delas i
-    rutor om OTHER_LAND_CELL m, med ett eget köpbart markområde per ruta. Spelet låter alla bygga och
-    fälla träd på mark utan markområde, så hela kartan måste täckas. Små rester (under MIN_OTHER_HA)
-    går till närmaste markområde. Byggen på vägar och vatten stoppas ändå av placementCollision.
+    skiften längs naturliga gränser, som verkliga fastigheter ofta följer: vägar, vattendrag och
+    skogs-, tätorts- och sjökanter. Stora skiften delas dessutom i rutor om OTHER_LAND_CELL m.
+    Spelet låter alla bygga och fälla träd på mark utan markområde, så hela kartan måste täckas.
+    Skiften under MIN_OTHER_HA, och de minsta om det blir fler än lagret rymmer, går till närmaste
+    markområde. Byggen på vägar och vatten stoppas ändå av placementCollision.
     Returnerar (lagret, antal nya markområden)."""
+    from rasterio.features import rasterize, shapes
     res = farm.shape[0]
     px = world.size / res
     out = farm.copy()
-    ys, xs = np.nonzero(out == 0)
-    if not len(ys):
+    empty = out == 0
+    if not empty.any():
         return out, 0
-    cell = OTHER_LAND_CELL
-    while True:
-        k = max(1, int(round(cell / px)))
-        cols = -(-res // k)
-        cid = (ys // k) * cols + xs // k
-        big = np.nonzero(np.bincount(cid, minlength=cols * cols) * px * px / 10_000 >= MIN_OTHER_HA)[0]
-        if first_id + len(big) - 1 <= max_id:
-            break
-        cell *= 1.25                                        # för många rutor: större rutor
-    ids = np.zeros(cols * cols, np.int32)
-    ids[big] = np.arange(first_id, first_id + len(big))
-    out[ys, xs] = ids[cid]
-    return spread(out, 2 * res), len(big)
+    tr = info_transform(world, res)
+    areas, roads, waterways = osm[0], osm[1], osm[2]
+    sq = world.square(-50)
+    edges = [ln for _, ln in roads + waterways if ln.intersects(sq)]
+    edges += [g.boundary for c, g in areas if c in landcover.FORESTS + ("residential", "water") and g.intersects(sq)]
+    barrier = rasterize(((g, 1) for g in edges), out_shape=out.shape, transform=tr, all_touched=True,
+                        dtype="uint8") > 0 if edges else np.zeros(out.shape, bool)
+    k = max(1, int(round(OTHER_LAND_CELL / px)))
+    yy, xx = np.indices(out.shape)
+    cell = ((yy // k) * (-(-res // k)) + xx // k).astype(np.int32)
+    parts = [(shape(geom), v) for geom, v in shapes(cell, mask=empty & ~barrier, connectivity=4, transform=tr)]
+    parts = sorted((g for g, _ in parts if g.area / 10_000 >= MIN_OTHER_HA), key=lambda g: -g.area)
+    parts = parts[:max_id - first_id + 1]
+    if parts:
+        ids = rasterize(((g, first_id + i) for i, g in enumerate(parts)), out_shape=out.shape, transform=tr,
+                        dtype="uint8")
+        out = np.where(empty, ids, out).astype(np.uint8)
+    return spread(out, 2 * res), len(parts)
 
 
 def load_editor_buildings(project, world):
