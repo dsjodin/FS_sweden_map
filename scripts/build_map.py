@@ -17,7 +17,8 @@ filer en FS25-karta behöver. Ovanpå den lägger vi:
 - översiktskarta (PDA) ritad från samma data. Spelet visar den över dubbla
   kartytan, så den täcker också omgivningen runt kartan.
 - träd i skogarna och, om laser_trees.py har körts, bara där laserdata visar
-  kronor, samt åkerholmar, trädrader och gårdsträd utanför skogen. Startgård med gårdshus, maskinhall och silo, en
+  kronor, samt åkerholmar, trädrader och gårdsträd utanför skogen. Granar ur
+  FS25_sprucepack_prefab.zip i data/mods, annars tall (prefab_trees.py). Startgård med gårdshus, maskinhall och silo, en
   spannmålsmottagning och plats för köpta fordon (scripts/fs25_objects.py)
 - fältens grödor vid nytt spel från skiftenas grödkoder (maps/fields.xml)
 - byggnader och objekt som du placerat i spelet och hämtat med
@@ -61,6 +62,7 @@ import fs25_objects as obj  # noqa: E402
 import landcover  # noqa: E402
 import water  # noqa: E402
 import drawings as drawn  # noqa: E402
+import prefab_trees  # noqa: E402
 
 # Marklager (namn i spelets standarduppsättning) i prioritetsordning: senare vinner.
 GROUND = [
@@ -332,13 +334,18 @@ def build(project, args):
         before = len(trees)
         trees = obj.has_canopy(trees, chm_path)
         print(f"  Laserdata: {before - len(trees)} skogsträd borttagna där det inte står träd")
-    trees += drawn.trees(drawings, obj.TREE_DIR)          # träd utsatta i byggeditorn
+    trees += drawn.trees(drawings, obj.tree_file)         # träd utsatta i byggeditorn
     loose_path = project.lm / "trad.json"
     loose = []
     if loose_path.exists():   # åkerholmar, trädrader och gårdsträd: [[e, n], ...] under "points"
         loose = obj.loose_trees(json.loads(loose_path.read_text(encoding="utf-8"))["points"],
                                 unary_union([no_trees] + buildings), world.square(5))
         trees += loose
+    prefabs = prefab_trees.install(maps_dir, obj.PREFAB_TREES)   # granar ur data/mods, kopieras in i kartan
+    trees = obj.without_missing_prefabs(trees, prefabs)
+    if prefabs:
+        sources.append("Granar: " + ", ".join(obj.PREFAB_TREES[a]["zip"].removesuffix(".zip") for a in sorted(prefabs))
+                       + " (prefab).")
     # Var träden hamnade, för kontrollkartan (kontrollkarta.py).
     project.build.mkdir(parents=True, exist_ok=True)
     (project.build / "trad_placerade.json").write_text(json.dumps({

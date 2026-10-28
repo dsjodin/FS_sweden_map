@@ -63,6 +63,12 @@ python scripts/kontrollkarta.py --map tysslinge  # build/tysslinge/kontrollkarta
 Kontrollkartan visar ortofotot, laserns trädkronor, de utplacerade träden och
 Marktäckes skogar. Den innehåller ortofoto och ska bara visas på egna datorer.
 
+FS25 saknar gran. Lägg prefab-paketet `FS25_sprucepack_prefab.zip` i `data/mods`,
+så kopierar `build_map.py` in granarna i kartan (`scripts/prefab_trees.py`). De blir
+huvudträdet i barr- och blandskogen och kan väljas i byggeditorns Träd-läge. Spelaren
+behöver ingen extra modd. Utan paketet blir det tall i stället. Granarna kan fällas och
+säljs som gran. Se `python scripts/i3d_info.py <zip>` för hur ett paket är uppbyggt.
+
 ### Byggeditor: moddbyggnader på de verkliga byggnaderna
 
 ```bash

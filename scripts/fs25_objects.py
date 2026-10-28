@@ -17,10 +17,20 @@ from shapely.geometry import Point, box
 from shapely.ops import unary_union
 
 # --- Träd --------------------------------------------------------------------------------------
-# Trädarter i spelets data/maps/trees (avläst ur spelets installation). Gran, ask och riktig lönn
-# finns inte i FS25; närmaste ersättare: askbladig lönn (boxelder), asiatisk björk och lind.
+# Trädarter i spelets data/maps/trees (avläst ur spelets installation). Ask och riktig lönn finns
+# inte i FS25; närmaste ersättare: askbladig lönn (boxelder), asiatisk björk och lind. Gran finns inte
+# heller, men kommer ur ett prefab-paket i data/mods som kopieras in i kartan (prefab_trees.py).
 TREE_DIR = "$data/maps/trees"
+PREFAB_DIR = "trees"     # i kartans maps-mapp, bredvid kartans i3d-fil
+PREFAB_TREES = {         # art: paketet i data/mods och ersättare (per storlek) om paketet saknas
+    "spruce": {"zip": "FS25_sprucepack_prefab.zip",
+               "stages": ["var01_stage01", "var01_stage02", "var01_stage03",
+                          "var02_stage01", "var02_stage02", "var02_stage03"],
+               "fallback": {1: ("pinusSylvestris", "stage02"), 2: ("pinusSylvestris", "stage03"),
+                            3: ("pinusSylvestris", "stage05")}},
+}
 TREE_SPECIES = {   # art: (svenskt namn, filnamn per storlek, passar i svensk natur)
+    "spruce": ("Gran", PREFAB_TREES["spruce"]["stages"], True),
     "pinusSylvestris": ("Tall", ["stage01", "stage02", "stage03", "stage04", "stage05"], True),
     "lodgepolePine": ("Contortatall", ["stage01", "stage02", "stage02Var2", "stage03", "stage03Var2"], True),
     "betulaErmanii": ("Björk", ["stage01", "stage02", "stage03", "stage04"], True),
@@ -47,13 +57,34 @@ def tree(art, stage, weight):
     return (art, f"{art}_{stage}", weight)
 
 
+def tree_file(art, stage):
+    """i3d-filen för ett träd, stage som 'oak_stage04'."""
+    return f"{PREFAB_DIR if art in PREFAB_TREES else TREE_DIR}/{art}/{stage}.i3d"
+
+
+def without_missing_prefabs(trees, installed):
+    """Träd [(e, n, steg, fil)] med arter ur prefab-paket som inte kom med utbytta mot ersättaren."""
+    out = []
+    for e, n, stage, filename in trees:
+        art = filename.split("/")[-2]
+        if art in PREFAB_TREES and art not in installed:
+            num = int(stage.rsplit("stage", 1)[1])
+            fart, fstage = PREFAB_TREES[art]["fallback"][num]
+            stage, filename = f"{fart}_{fstage}", tree_file(fart, f"{fart}_{fstage}")
+        out.append((e, n, stage, filename))
+    return out
+
+
 # Urval (art, fil, vikt) för den automatiska skogen och träden utanför skogen.
-CONIFER_MATURE = [tree("pinusSylvestris", "stage04", 3), tree("pinusSylvestris", "stage05", 4),
-                  tree("lodgepolePine", "stage03", 1), tree("lodgepolePine", "stage03Var2", 1),
-                  tree("betulaErmanii", "stage04", 1)]
-CONIFER_EDGE = [tree("pinusSylvestris", "stage02", 2), tree("pinusSylvestris", "stage03", 3),
-                tree("lodgepolePine", "stage02", 1), tree("betulaErmanii", "stage02", 1),
-                tree("betulaErmanii", "stage03", 2), tree("downyServiceBerry", "stage02", 1)]
+CONIFER_MATURE = [tree("spruce", "var01_stage03", 3), tree("spruce", "var02_stage03", 3),
+                  tree("spruce", "var01_stage02", 1), tree("spruce", "var02_stage02", 1),
+                  tree("pinusSylvestris", "stage04", 2), tree("pinusSylvestris", "stage05", 3),
+                  tree("lodgepolePine", "stage03", 1), tree("betulaErmanii", "stage04", 1)]
+CONIFER_EDGE = [tree("spruce", "var01_stage01", 1), tree("spruce", "var02_stage01", 1),
+                tree("spruce", "var01_stage02", 1), tree("spruce", "var02_stage02", 1),
+                tree("pinusSylvestris", "stage02", 1), tree("pinusSylvestris", "stage03", 2),
+                tree("betulaErmanii", "stage02", 1), tree("betulaErmanii", "stage03", 2),
+                tree("downyServiceBerry", "stage02", 1)]
 MATURE = [tree("betulaErmanii", "stage04", 4), tree("aspen", "stage05", 2), tree("aspen", "stage06_var01", 1),
           tree("oak", "stage04", 2), tree("oak", "stage05", 1), tree("tiliaAmurensis", "stage04", 1),
           tree("americanElm", "stage05", 1), tree("boxelder", "stage03", 1)]
@@ -62,10 +93,10 @@ EDGE = [tree("betulaErmanii", "stage02", 2), tree("betulaErmanii", "stage03", 3)
         tree("downyServiceBerry", "stage01", 1), tree("downyServiceBerry", "stage02", 2), tree("cherry", "stage02", 1)]
 LOOSE_MATURE = [tree("oak", "stage04", 3), tree("oak", "stage05", 2), tree("tiliaAmurensis", "stage04", 2),
                 tree("betulaErmanii", "stage04", 3), tree("americanElm", "stage05", 1), tree("boxelder", "stage03", 2),
-                tree("aspen", "stage05", 1)]
+                tree("aspen", "stage05", 1), tree("spruce", "var01_stage03", 1)]
 LOOSE_YOUNG = [tree("betulaErmanii", "stage02", 2), tree("betulaErmanii", "stage03", 2), tree("boxelder", "stage02", 2),
                tree("cherry", "stage03", 1), tree("downyServiceBerry", "stage02", 2), tree("downyServiceBerry", "stage03", 2),
-               tree("oak", "stage02", 1)]
+               tree("oak", "stage02", 1), tree("spruce", "var02_stage01", 1)]
 TREE_SPACING = 10.0     # m mellan träd i skogen (med slumpad förskjutning)
 EDGE_WIDTH = 15.0       # m in från skogskanten där yngre träd och buskar står
 YOUNG_HEIGHT = 8.0      # m: lägre träd utanför skogen blir unga träd och buskar
@@ -198,14 +229,14 @@ def tree_points(forests, cut, inner, seed=7, mature=MATURE, edge=EDGE, max_trees
     pm, pe = pick(mature, len(gx)), pick(edge, len(gx))
     for i, (e, n) in enumerate(zip(gx, gy)):
         art, stage, _ = mature[pm[i]] if in_core[i] else edge[pe[i]]
-        out.append((float(e), float(n), stage, f"{TREE_DIR}/{art}/{stage}.i3d"))
+        out.append((float(e), float(n), stage, tree_file(art, stage)))
     return out
 
 
 def loose_trees(points, cut, inner, seed=9):
     """Träd utanför skogen på givna platser [[e, n] eller [e, n, höjd], ...] (laser_trees.py).
     Låga träd (under YOUNG_HEIGHT m) blir unga träd och buskar, övriga fullvuxna lövträd
-    (ek, lind, björk, alm, lönn och asp)."""
+    (ek, lind, björk, alm, lönn och asp, en del gran)."""
     rng = np.random.default_rng(seed)
     if not points:
         return []
@@ -220,7 +251,7 @@ def loose_trees(points, cut, inner, seed=9):
                       (LOOSE_MATURE, pts[keep][pts[keep][:, 2] >= YOUNG_HEIGHT])):
         weights = np.array([w for *_, w in pool], dtype=float)
         pick = rng.choice(len(pool), len(sel), p=weights / weights.sum())
-        out += [(float(e), float(n), pool[k][1], f"{TREE_DIR}/{pool[k][0]}/{pool[k][1]}.i3d")
+        out += [(float(e), float(n), pool[k][1], tree_file(*pool[k][:2]))
                 for (e, n, _h), k in zip(sel, pick)]
     return out
 

@@ -51,7 +51,7 @@ def tree_types():
         for stage in stages:
             num = re.search(r"stage(\d+)", stage)
             var = re.search(r"(?i)var_?(\d+)", stage)
-            label = f"{name}, storlek {int(num.group(1))}" + (f" (variant {var.group(1)})" if var else "")
+            label = f"{name}, storlek {int(num.group(1))}" + (f" (variant {int(var.group(1))})" if var else "")
             out.append({"art": art, "stage": f"{art}_{stage}", "label": label if swedish else label + " – utländsk",
                         "swedish": swedish})
     return sorted(out, key=lambda t: (not t["swedish"], t["label"]))

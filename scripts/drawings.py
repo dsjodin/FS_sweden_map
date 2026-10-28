@@ -118,7 +118,7 @@ def no_tree_zone(drawings):
     return unary_union(areas_of(drawings, (GROUND_TYPES - {"skog"}) | {NO_TREES}))
 
 
-def trees(drawings, tree_dir):
+def trees(drawings, tree_file):
     """Utsatta träd som (e, n, steg, fil) i samma form som fs25_objects.tree_points."""
-    return [(d["geom"].x, d["geom"].y, d["type"], f"{tree_dir}/{d['art']}/{d['type']}.i3d")
+    return [(d["geom"].x, d["geom"].y, d["type"], tree_file(d["art"], d["type"]))
             for d in drawings if d["kind"] == "träd"]
