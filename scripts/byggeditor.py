@@ -8,6 +8,8 @@ webbläsaren (http://ClaudeVM:8080). Där syns:
 - Topografi 10:s byggnader som konturer (röda = utan byggnad, gröna = klara)
 - byggnader ur modd-katalogen (mod_katalog.py), sorterade efter hur bra de
   passar i storlek för den kontur du klickat på
+- läget Start: var startgården står och vilka fält du äger från start
+  (maps/<namn>/start.json, fälten från senaste bygget)
 
 Välj en byggnad så hamnar den mitt i konturen, vriden efter långsidan. Dra den
 med musen, vrid med knapparna eller Q/E, ta bort med Delete. Allt sparas direkt
@@ -127,6 +129,13 @@ def main():
         print("  Katalogen saknas eller är tom: kör först python scripts/mod_katalog.py data/mods", file=sys.stderr)
     store = project.dir / "byggnader.json"
     drawings = project.dir / "ritningar.json"
+    start = project.dir / "start.json"                    # Start-läget: gårdens plats och startfälten
+    import fs25_objects as obj
+
+    def build_fields():
+        """Fälten från senaste bygget (build_map.py skriver build/<namn>/falt.json)."""
+        path = project.build / "falt.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
 
     def generated_trees():
         """Träden från senaste bygget (build_map.py), i meter från kartans mitt, för att visa i editorn."""
@@ -167,8 +176,11 @@ def main():
                 placed = json.loads(store.read_text(encoding="utf-8")) if store.exists() else []
                 doors = json.loads(DOORS.read_text(encoding="utf-8")) if DOORS.exists() else {}
                 drawn = json.loads(drawings.read_text(encoding="utf-8")) if drawings.exists() else []
+                chosen = json.loads(start.read_text(encoding="utf-8")) if start.exists() else {}
                 return self.send(200, json.dumps({**data, "placed": placed, "doors": doors, "drawings": drawn,
-                                                  "treeTypes": tree_types(), "genTrees": generated_trees()}).encode())
+                                                  "treeTypes": tree_types(), "genTrees": generated_trees(),
+                                                  "start": chosen, "fields": build_fields(),
+                                                  "farmSize": obj.FARM_SIZE}).encode())
             if path == "/api/build":
                 return self.send(200, json.dumps(build).encode())
             if path in files and files[path][0].exists():
@@ -189,6 +201,9 @@ def main():
                 drawn = json.loads(body or b"[]")
                 drawings.write_text(json.dumps(drawn, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
                 return self.send(200, json.dumps({"ok": True, "count": len(drawn)}).encode())
+            if self.path == "/api/start":
+                start.write_text(json.dumps(json.loads(body or b"{}"), indent=1) + "\n", encoding="utf-8")
+                return self.send(200, b'{"ok": true}')
             if self.path == "/api/doors":
                 DOORS.write_text(json.dumps(json.loads(body or b"{}"), indent=1, ensure_ascii=False, sort_keys=True)
                                  + "\n", encoding="utf-8")

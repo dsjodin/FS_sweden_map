@@ -19,7 +19,7 @@
   button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.on { outline: 2px solid var(--sel); }
-  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px; }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 8px; }
   .tabs button.on { background: var(--accent); color: #fff; outline: none; }
   select, input[type=number] { padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
   input[type=search] { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
@@ -40,6 +40,7 @@ let D, placed = [], drawings = [], mode = 'bygg';
 let selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = false, modFilter = '';
 let tool = null, current = null, selDraw = null;            // Måla mark: verktyg, pågående ritning, vald ritning
 let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null, showGen = false;
+let start = {gard: null, falt: []};                         // Start-läget: gårdens mitt och en punkt per startfält
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
                     'skog': '#2e7d32', 'sudda vägar': '#e53935', 'inga träd': '#ff9800'};
@@ -52,6 +53,7 @@ const ROAD_TYPES = {'grusväg': '#e6d3a1', 'asfaltväg': '#30353a'};
 const map = L.map('map', {crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25});
 const genLayer = L.layerGroup(), footLayer = L.layerGroup().addTo(map), drawLayer = L.layerGroup().addTo(map);
 const placeLayer = L.layerGroup().addTo(map), treeLayer = L.layerGroup().addTo(map), editLayer = L.layerGroup().addTo(map);
+const startLayer = L.layerGroup().addTo(map);
 const canvas = L.canvas({padding: 0.5});
 const side = document.getElementById('side');
 const ll = (x, y) => [y, x];   // meter österut/norrut -> Leaflet
@@ -64,6 +66,11 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => fetch('api/save', {method: 'POST', body: JSON.stringify(placed)}), 400);
   drawStats();
+}
+let startTimer;
+function saveStart() {
+  clearTimeout(startTimer);
+  startTimer = setTimeout(() => fetch('api/start', {method: 'POST', body: JSON.stringify(start)}), 300);
 }
 function saveDrawings() {
   clearTimeout(drawTimer);
@@ -130,8 +137,48 @@ function dragHandle(latlng, onMove, onEnd) {   // flytta något med musen tills 
 function treeRadius(d) { const m = /stage(\d+)/.exec(d.type); return 3 + (m ? +m[1] : 3); }
 function treeLabel(type) { const t = D.treeTypes.find(t => t.stage === type); return t ? t.label : type; }
 
+// --- Startgård och startfält ----------------------------------------------------------------------
+function inside(pt, poly) {      // punkt i polygon (strålmetoden)
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+function isStart(f) { return start.falt.some(p => inside(p, f.poly)); }
+function toggleField(f, latlng) {
+  if (isStart(f)) start.falt = start.falt.filter(p => !inside(p, f.poly));
+  else start.falt.push(xy(latlng));
+  saveStart(); draw(); panel();
+}
+function farmCorners(x, y) { const h = D.farmSize / 2; return [ll(x - h, y - h), ll(x + h, y - h), ll(x + h, y + h), ll(x - h, y + h)]; }
+function drawStart() {
+  startLayer.clearLayers();
+  const own = start.falt.length > 0;
+  for (const f of mode === 'start' ? D.fields : []) {        // fälten bara i Start-läget, gården alltid
+    const sel = own ? isStart(f) : f.start;
+    const poly = L.polygon(f.poly.map(p => ll(...p)), {color: sel ? '#e53935' : '#ffb347', weight: sel ? 2.5 : 1,
+      dashArray: sel && !own ? '5 4' : null, fillColor: '#e53935', fillOpacity: sel ? 0.35 : 0.04,
+      interactive: mode === 'start'}).bindTooltip(`Fält ${f.nr}: ${f.fruit}, ${f.ha} ha`, {sticky: true}).addTo(startLayer);
+    poly.on('click', e => { L.DomEvent.stop(e); if (tool === 'gard') map.fire('click', {latlng: e.latlng}); else toggleField(f, e.latlng); });
+  }
+  if (start.gard) {
+    const sq = L.polygon(farmCorners(...start.gard), {color: '#ffd400', weight: 3, fillColor: '#ffd400', fillOpacity: 0.25,
+      interactive: mode === 'start'}).bindTooltip('Startgården (dra för att flytta)', {sticky: true}).addTo(startLayer);
+    sq.on('click', L.DomEvent.stop);
+    sq.on('mousedown', e => {
+      L.DomEvent.stop(e);
+      const s0 = e.latlng, g0 = [...start.gard];
+      dragHandle(s0, ln => { start.gard = [Math.round(g0[0] + ln.lng - s0.lng), Math.round(g0[1] + ln.lat - s0.lat)];
+                             sq.setLatLngs(farmCorners(...start.gard)); }, () => { saveStart(); panel(); });
+    });
+  }
+}
+
 // --- Rita kartan --------------------------------------------------------------------------------
 function draw() {
+  drawStart();
   footLayer.clearLayers(); placeLayer.clearLayers(); drawLayer.clearLayers(); treeLayer.clearLayers(); editLayer.clearLayers();
   const done = new Set(placed.map(p => p.ref));
   for (const b of D.buildings) {
@@ -308,12 +355,33 @@ function panelTrad() {
   }
   return h;
 }
+function panelStart() {
+  const own = start.falt.length > 0;
+  const sel = D.fields.filter(f => own ? isStart(f) : f.start);
+  const ha = sel.reduce((a, f) => a + f.ha, 0);
+  let h = `<h2>Startgården</h2>
+    <div class="row"><button id="pg" class="${tool === 'gard' ? 'on' : ''}">${start.gard ? 'Flytta gården hit …' : 'Placera gården'}</button>
+    ${start.gard ? '<button id="rg">Låt bygget välja plats</button>' : ''}</div>
+    <p class="muted">${start.gard ? `Den gula rutan (${D.farmSize} × ${D.farmSize} m) är startgården med gårdshus, maskinhall och silo.
+      Dra den för att flytta den. Marken under planas.` : 'Ingen plats vald: bygget väljer en ledig plats nära startpunkten, utanför fält, vägar och skog. Klicka på knappen och sedan i kartan.'}</p>
+    <h2>Startfält</h2>`;
+  if (!D.fields.length) return h + '<p>Bygg kartan en gång, så visas fälten här.</p>';
+  h += `<p>${own ? `${sel.length} fält valda, ${ha.toFixed(1)} ha.` : `Inga valda. Senaste bygget gav dig ${sel.length} fält (${ha.toFixed(1)} ha), streckade.`}
+    Klicka på ett fält för att välja eller ta bort det. Du äger de valda fälten från start, med den mark runt dem
+    som hör till samma markområde.</p>
+    ${own ? '<div class="row"><button id="cf">Rensa valen (bygget väljer själv)</button></div>' : ''}
+    <div class="muted">${sel.map(f => `Fält ${f.nr} · ${f.fruit} · ${f.ha} ha`).join('<br>')}</div>
+    <p class="muted">Fälten och numren är från senaste bygget. Valen sparas som punkter i fälten, så de gäller även om
+    numren ändras. Tryck Bygg kartan när du är klar.</p>`;
+  return h;
+}
 function panel() {
   let h = `<div class="tabs"><button data-m="bygg" class="${mode === 'bygg' ? 'on' : ''}">Byggnader</button>
     <button data-m="mala" class="${mode === 'mala' ? 'on' : ''}">Måla mark</button>
-    <button data-m="trad" class="${mode === 'trad' ? 'on' : ''}">Träd</button></div>
+    <button data-m="trad" class="${mode === 'trad' ? 'on' : ''}">Träd</button>
+    <button data-m="start" class="${mode === 'start' ? 'on' : ''}">Start</button></div>
     <div id="stats" class="stats"></div>`;
-  h += mode === 'bygg' ? panelBygg() : mode === 'mala' ? panelMala() : panelTrad();
+  h += mode === 'bygg' ? panelBygg() : mode === 'mala' ? panelMala() : mode === 'trad' ? panelTrad() : panelStart();
   h += `<h2>Bygg</h2><div class="row"><button class="primary" id="build" ${building ? 'disabled' : ''}>
       ${building ? 'Bygger …' : 'Bygg kartan'}</button></div><pre id="log" ${buildLog ? '' : 'hidden'}>${esc(buildLog)}</pre>`;
   side.innerHTML = h; drawStats();
@@ -352,6 +420,10 @@ function panel() {
   on('tc', 'onchange', e => { selDraw.type = e.target.value; selDraw.art = D.treeTypes.find(t => t.stage === selDraw.type).art; saveDrawings(); draw(); });
   on('dt', 'onclick', removeDraw);
   on('sg', 'onchange', e => { showGen = e.target.checked; drawGenerated(); });
+  // Start
+  on('pg', 'onclick', () => startTool(tool === 'gard' ? null : 'gard'));
+  on('rg', 'onclick', () => { start.gard = null; saveStart(); draw(); panel(); });
+  on('cf', 'onclick', () => { start.falt = []; saveStart(); draw(); panel(); });
   document.getElementById('build').onclick = startBuild;
 }
 function bindList() {
@@ -370,6 +442,7 @@ async function startBuild() {
   try {
     await fetch('api/save', {method: 'POST', body: JSON.stringify(placed)});
     await fetch('api/drawings', {method: 'POST', body: JSON.stringify(drawings)});
+    await fetch('api/start', {method: 'POST', body: JSON.stringify(start)});
     const r = await fetch('api/build', {method: 'POST'});
     if (!r.ok) buildLog += 'Ett bygge pågår redan, visar dess logg.\n';
   } catch (e) {
@@ -382,13 +455,16 @@ async function startBuild() {
     } catch (e) { buildLog += '.'; }
     showBuild();
     if (building) setTimeout(poll, 1500);
-    else fetch('api/data').then(r => r.json()).then(d => { D.genTrees = d.genTrees; drawGenerated(); if (mode === 'trad') panel(); });
+    else fetch('api/data').then(r => r.json()).then(d => { D.genTrees = d.genTrees; D.fields = d.fields || []; drawGenerated(); draw(); panel(); });
   };
   setTimeout(poll, 800);
 }
 
 // --- Mus och tangentbord ------------------------------------------------------------------------
 map.on('click', e => {
+  if (mode === 'start' && tool === 'gard') {
+    start.gard = xy(e.latlng).map(Math.round); tool = null; saveStart(); draw(); panel(); return;
+  }
   if (mode === 'mala' && (tool === 'yta' || tool === 'väg')) {
     if (!current) current = tool === 'yta' ? {kind: 'yta', type: areaType, points: []}
                                            : {kind: 'väg', type: roadType, width: roadWidth, points: []};
@@ -427,14 +503,16 @@ document.addEventListener('keydown', e => {
 
 fetch('api/data').then(r => r.json()).then(d => {
   D = d; placed = d.placed || []; drawings = d.drawings || []; D.doors = d.doors || {};
-  D.genTrees = d.genTrees || []; D.treeTypes = d.treeTypes || [];
+  D.genTrees = d.genTrees || []; D.treeTypes = d.treeTypes || []; D.fields = d.fields || []; D.farmSize = d.farmSize || 100;
+  start = {gard: (d.start || {}).gard || null, falt: (d.start || {}).falt || []};
   D.catalog.forEach(c => { if (c.thumb) c.thumb = 'img/' + c.thumb.split('/').pop(); });
   const bases = {};
   for (const bg of D.backgrounds) bases[bg.name] = L.imageOverlay(bg.file, [[-bg.half, -bg.half], [bg.half, bg.half]]);
   bases['Ingen bakgrund'] = L.layerGroup();
   Object.values(bases)[0].addTo(map);
   L.control.layers(bases, {'Verkliga byggnader': footLayer, 'Ritade ytor och vägar': drawLayer,
-    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer}, {collapsed: false}).addTo(map);
+    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer, 'Fält och startgård': startLayer},
+    {collapsed: false}).addTo(map);
   L.rectangle([[-D.half, -D.half], [D.half, D.half]], {color: '#fff', weight: 1, dashArray: '6 4', fill: false, interactive: false}).addTo(map);
   map.fitBounds([[-D.half, -D.half], [D.half, D.half]]);
   draw(); panel();

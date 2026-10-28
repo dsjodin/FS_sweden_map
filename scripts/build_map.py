@@ -302,8 +302,8 @@ def build(project, args):
     # Farmlands. FS25 tillåter bara ett fält per markområde ("There already exists field X on farmland Y",
     # fält nummer två och framåt försvinner), så varje fält blir ett eget markområde, med fält nummer N på
     # markområde N. Resten av en fastighet går till fastighetens närmaste fält; fastigheter utan fält blir
-    # egna markområden (fastigheter.py). Startgården = fälten på fastigheten (eller jordbruksblocket)
-    # närmast startpunkten.
+    # egna markområden (fastigheter.py). Startgårdens fält: de som valts i byggeditorns Start-läge
+    # (maps/<namn>/start.json), annars fälten på fastigheten (eller jordbruksblocket) närmast startpunkten.
     start = cfg_map.get("start") or cfg_map["center"]
     se, sn = to_sweref(start["lon"], start["lat"])
     start_pt = Point(se, sn)
@@ -315,8 +315,20 @@ def build(project, args):
         sys.exit(f"startfastighet {wanted} i area.json har inga fält inom kartan (eller saknas i fastigheter.geojson).")
     small = [b for b in blocks if b not in properties or properties[b].area / 10_000 <= START_MAX_HA]
     start_block = wanted or min(small or blocks, key=lambda b: unary_union(blocks[b]).distance(start_pt))
-    fields = [f for f in fields if f[1] == start_block] + [f for f in fields if f[1] != start_block]
-    n_start = len(blocks[start_block])
+    chosen = load_start(project, world)
+    picked = [f for f in fields if any(f[0].contains(pt) for pt in chosen["falt"])] if chosen["falt"] else []
+    if chosen["falt"] and not picked:
+        print("  Varning: inget av fälten som valts i byggeditorns Start-läge finns kvar, startgården väljs själv")
+    if picked:
+        fields = picked + [f for f in fields if not any(f is q for q in picked)]
+        start_desc = f"{len(picked)} fält valda i byggeditorn"
+    else:
+        fields = [f for f in fields if f[1] == start_block] + [f for f in fields if f[1] != start_block]
+        start_desc = (f"{'fastighet' if start_block in properties else 'block'} {start_block} med "
+                      f"{len(blocks[start_block])} fält" + ("" if wanted else
+                      f" (närmast startpunkten av dem under {START_MAX_HA:.0f} ha; välj själv i byggeditorns Start-läge)"))
+    n_start = len(picked) or len(blocks[start_block])
+    save_fields_for_editor(project.build / "falt.json", fields, world, n_start)
     if len(fields) > 254:
         sys.exit(f"{len(fields)} fält, men FS25 tillåter bara ett fält per markområde och högst 254 markområden.")
     lone = [k for k in properties if k not in blocks][:254 - len(fields)]   # fastigheter utan fält, största först
@@ -328,8 +340,11 @@ def build(project, args):
     field_union = unary_union([g.buffer(3) for g, _, _ in fields])
     inner = world.square(150)
     forests = [g for c, g in areas if c in landcover.FORESTS]
-    farm = obj.farm_site(start_pt, [g for c, g in areas if c == "farmyard"],     # inte på fält, vägar eller i skog
-                         unary_union([field_union, cut] + forests), inner)
+    if chosen["gard"]:                                       # byggeditorns Start-läge
+        farm = obj.Site("gård", world.e0 + chosen["gard"][0], world.n0 + chosen["gard"][1], obj.FARM_SIZE)
+    else:                                                    # inte på fält, vägar eller i skog
+        farm = obj.farm_site(start_pt, [g for c, g in areas if c == "farmyard"],
+                             unary_union([field_union, cut] + forests), inner)
     if farm is None:
         sys.exit("Hittade ingen ledig plats för startgården nära startpunkten.")
     mill_blocked = unary_union([field_union, cut, farm.box.buffer(200)]
@@ -483,9 +498,8 @@ def build(project, args):
 
     owned_ha = ha[1:n_start + 1].sum()
     print(f"\n{title}: {len(fields)} fält i {n_named + n_other} markområden, terräng {base:.1f}–{real_max:.1f} m ö.h.")
-    print(f"Startgård: {'fastighet' if start_block in properties else 'block'} {start_block} med {len(blocks[start_block])} fält, {owned_ha:.1f} ha mark"
-          + ("" if wanted else f" (närmast startpunkten av dem under {START_MAX_HA:.0f} ha; välj en annan med "
-                                '"startfastighet" i area.json)'))
+    print(f"Startgård: {start_desc}, {owned_ha:.1f} ha mark"
+          + (", gården där du placerade den" if chosen["gard"] else ""))
     print(f"Vatten: {sum(m[0].startswith('water') for m in water_meshes)} vattenytor, "
           f"{sum(m[0].startswith('stream') for m in water_meshes)} diken och bäckar")
     print(f"Träd: {len(trees)}" + (f" (varav {len(loose)} utanför skogen)" if loose else "")
@@ -679,6 +693,25 @@ def price_scales(farm, fields, osm, world):
     sums = np.bincount(farm.ravel(), weights=weight.ravel(), minlength=256)
     counts = np.bincount(farm.ravel(), minlength=256)
     return {i: float(sums[i] / counts[i]) for i in range(1, 256) if counts[i]}
+
+
+def load_start(project, world):
+    """Byggeditorns Start-läge (maps/<namn>/start.json): gårdens mitt och en punkt i varje startfält,
+    i meter från kartans mitt. Punkterna i SWEREF; fälten som innehåller dem blir startgårdens."""
+    path = project.dir / "start.json"
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return {"gard": data.get("gard"),
+            "falt": [Point(world.e0 + x, world.n0 + y) for x, y in data.get("falt", [])]}
+
+
+def save_fields_for_editor(path, fields, world, n_start):
+    """Fälten från senaste bygget till byggeditorns Start-läge: nummer, gröda och kontur."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps([
+        {"nr": i, "fruit": (obj.CROP_FRUIT.get(code) or "plöjt").lower(), "ha": round(geom.area / 10_000, 1),
+         "start": i <= n_start,
+         "poly": [[round(x - world.e0, 1), round(y - world.n0, 1)] for x, y in geom.simplify(1).exterior.coords]}
+        for i, (geom, _block, code) in enumerate(fields, 1)]), encoding="utf-8")
 
 
 def save_farmland_image(path, farm):
