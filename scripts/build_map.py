@@ -421,6 +421,7 @@ def build(project, args):
     near_fields = np.mean(farm_arr > 0)
     farm_arr, n_other = fill_farmlands(farm_arr, world, osm, len(order) + 1)
     binfmt.paint_grle(str(data_dir / "infoLayer_farmland.grle"), farm_arr)
+    save_farmland_image(project.build / "markomraden.png", farm_arr)
     binfmt.paint_grle(str(data_dir / "infoLayer_placementCollision.grle"), no_build.astype(np.uint8))
     print(f"Mark: {near_fields:.0%} av kartan hör till {len(order)} "
           f"{'fastigheter' if properties else 'jordbruksblock'}, resten till {n_other} skiften "
@@ -586,6 +587,19 @@ def extend_farmlands(farm, no_build, world, osm):
         blocked |= rasterize(((g, 1) for g in town), out_shape=farm.shape,
                              transform=info_transform(world, res), dtype="uint8") > 0
     return np.where(farm > 0, farm, np.where(blocked, 0, grown)).astype(np.uint8)
+
+
+def save_farmland_image(path, farm):
+    """Markområdena som bild för kontroll (build/<namn>/markomraden.png): en färg per område,
+    startgårdens område (1) rött, gränser svarta."""
+    rgb = np.random.default_rng(5).integers(90, 230, (256, 3)).astype(np.uint8)
+    rgb[0], rgb[1] = (255, 255, 255), (220, 30, 30)
+    img = rgb[farm]
+    edge = np.zeros(farm.shape, bool)
+    edge[1:, :] |= farm[1:, :] != farm[:-1, :]
+    edge[:, 1:] |= farm[:, 1:] != farm[:, :-1]
+    img[edge] = 0
+    Image.fromarray(img).save(path)
 
 
 def spread(arr, steps):
