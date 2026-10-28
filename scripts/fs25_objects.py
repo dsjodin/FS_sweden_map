@@ -364,11 +364,19 @@ def write_fields_xml(path, fields):
 
 
 def patch_map_xml(path):
-    """Lägg till fältens startgrödor, butik och trädgräns i map.xml."""
+    """Lägg till fältens startgrödor, butik, trädgräns, kartans byggnader och djuren i map.xml.
+    Byggnaderna och djuren som i spelets egen karta (mapEU.xml): utan storeItems laddas inte
+    gårdshuset och spannmålsmottagningen ("not defined in store items"), och utan animals
+    laddas inga djurbyggnader ("Animal type 'COW' not found")."""
     s = path.read_text(encoding="utf-8")
     extra = ('    <fields filename="maps/fields.xml" />\n'
              '    <shop filename="$data/store/ui/shop.xml" />\n'
-             '    <treeTypes maxNumTrees="25000" />\n')
+             '    <treeTypes maxNumTrees="25000" />\n'
+             '    <storeItems filename="$data/maps/mapEU/config/storeItems.xml" />\n'
+             '    <animals filename="$dataS/character/animals.xml">\n'
+             '        <names filename="$dataS/character/animalNames.xml" />\n'
+             '        <food filename="$dataS/character/animalFood.xml" />\n'
+             '    </animals>\n')
     anchor = '    <farmlands filename="maps/farmlands.xml" />\n'
     if anchor not in s:
         raise ValueError("Hittar inte farmlands-raden i map.xml")
