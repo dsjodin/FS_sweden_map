@@ -88,7 +88,8 @@ annat står. Det används av `scripts/build_map.py` och `scripts/fs25_objects.py
   fler än två värden, så den bearbetade jorden och fältens inre såg rätt ut medan
   fältkanter, vägrenar och skogskanter blev omkastade i spelet. Avläst ur rutor som
   GIANTS Editor själv skrivit i en sparad `densityMap_fruits.gdm`. Rättat i
-  `third_party/fs25_empty_map/tools/binfmt.py`.
+  `third_party/fs25_empty_map/tools/binfmt.py` och bekräftat i spelet: fältkanter
+  och vägrenar blev rätt.
 - **Högst fyra värden per ruta** (`maxBpp` 2). Fler blandas ihop. `limit_palette` i
   build_map.py förenklar sådana rutor innan de skrivs, och grödorna har företräde.
 
