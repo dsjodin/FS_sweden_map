@@ -985,6 +985,7 @@ def paint_vegetation(path, fields, labels, lawns, roads, world, res, waterways=(
 def mask_of(geoms, world, res):
     """Rutnät (res × res, norr uppåt) som är sant inne i geometrierna."""
     from rasterio.features import rasterize
+    geoms = [g for g in geoms if not g.is_empty]            # små ytor kan bli tomma efter negativ buffert
     if not geoms:
         return np.zeros((res, res), bool)
     return rasterize(((g, 1) for g in geoms), out_shape=(res, res), transform=info_transform(world, res),
