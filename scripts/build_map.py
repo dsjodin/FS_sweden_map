@@ -484,7 +484,9 @@ def build(project, args):
     obj.write_fields_xml(maps_dir / "fields.xml", fields)
     obj.patch_map_xml(maps_dir / "map.xml")
     write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""), sources)
-    add_mod_dependencies(mod_dir / "modDesc.xml", sorted({p["mod"] for p in placements if p.get("mod")}))
+    vehicle_mods = copy_vehicles(project, maps_dir / "vehicles.xml")       # startgårdens maskiner
+    add_mod_dependencies(mod_dir / "modDesc.xml",
+                         sorted({p["mod"] for p in placements if p.get("mod")} | vehicle_mods))
     make_overview(project, maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
 
     missing = [f for f in local_files if not (maps_dir / f).exists()]
@@ -846,6 +848,20 @@ def load_placements(project):
     """Objekt från import_savegame.py: [{filename, position, rotation, mod}]."""
     path = project.dir / "placeringar.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+
+
+def copy_vehicles(project, path):
+    """Startgårdens maskiner från import_savegame.py --fordon (maps/<namn>/fordon.xml) som kartans
+    vehicles.xml. Returnerar moddarna de kommer från."""
+    import re
+    src = project.dir / "fordon.xml"
+    if not src.exists():
+        return set()
+    text = src.read_text(encoding="utf-8")
+    path.write_text(text, encoding="utf-8")
+    n = text.count("<vehicle ")
+    print(f"  Startgårdens maskiner: {n} (från {project.rel(src)})")
+    return set(re.findall(r'filename="\$moddir\$([^/\\"]+)[/\\]', text)) | set(re.findall(r'modName="([^"]+)"', text))
 
 
 def add_mod_dependencies(path, mods):

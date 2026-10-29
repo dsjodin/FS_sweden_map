@@ -117,6 +117,11 @@ python scripts/build_map.py --map tysslinge
 Placeringarna sparas i `maps/<namn>/placeringar.json` och följer med i varje
 ombyggnad. Objekt från andra moddar blir beroenden i kartans `modDesc.xml`.
 
+Startgårdens maskiner väljs på samma sätt: köp dem i ett testspel, ställ dem på gården,
+spara och kör `import_savegame.py --fordon` med samma sparfil. Gårdens ägda maskiner
+(inte leasade) sparas i `maps/<namn>/fordon.xml`, ersätter den förra listan och blir
+kartans `vehicles.xml`, som spelet läser vid nytt spel som Ny lantbrukare.
+
 Det här finns till GIANTS Editor:
 
 - `build/<namn>/data/dem.png`: höjdkarta i FS25-format, med värdena i
