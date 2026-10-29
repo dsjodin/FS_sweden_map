@@ -103,6 +103,13 @@ fält du äger från start (klicka på fälten från senaste bygget). Valen spar
 `maps/<namn>/start.json`. Utan val väljer bygget själv. Under **Byggnader → Placera fritt**
 sätter du ut moddbyggnader var som helst, till exempel på gårdsplanen.
 
+Läget **Maskiner** visar startgårdens maskiner (från `import_savegame.py --fordon`). Dra en
+maskin för att flytta den, med påkopplade redskap, och vrid med <kbd>Q</kbd>/<kbd>E</kbd>. Bygget sätter
+den på marken där den hamnar. Nya maskiner väljs ur en katalog: kör `tools/fordon_export.ps1`
+på Windows-datorn (spelets maskinfiler och butiksbilder i en zip), kopiera zip-filen till
+`data/fordon/` och kör `python scripts/fordon_katalog.py`. Moddarnas maskiner i `data/mods`
+kommer också med. Ändringarna sparas i `maps/<namn>/fordon_andringar.json`.
+
 ### Bygga i spelet i stället för i GIANTS Editor
 
 Placera byggnader och objekt i spelets byggläge, kopiera sparfilen till

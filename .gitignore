@@ -14,3 +14,8 @@ build/
 # Testbyggen från fs25_empty_map
 third_party/fs25_empty_map/out/
 data/*/savegame*/
+
+# Moddar, spelets maskinfiler och fastighetsgränser: bara på våra egna datorer
+data/mods/
+data/fordon/
+data/*/fastigheter.geojson

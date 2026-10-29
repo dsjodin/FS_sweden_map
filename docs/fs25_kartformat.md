@@ -155,6 +155,9 @@ annat står. Det används av `scripts/build_map.py` och `scripts/fs25_objects.py
 - Kartans `vehicles.xml` har samma format som sparfilens (`savegame_vehicles.xsd`).
   Fordonen kan kopieras rakt ur en sparfil med `defaultFarmProperty="true"`
   (`import_savegame.py --fordon`).
+- En fordonsdels `rotation="rx ry rz"` (grader) är matrisen **Rz · Ry · Rx**: en traktor i
+  spelets egen karta (`"137.54 -86.29 -136.14"`) står bara plant med den ordningen. Maskinens
+  front är lokal +z. `scripts/fordon.py` vrider maskiner med den ordningen.
 - Moddbyggnader kan placeras från kartans `placeables.xml` med `$moddir$<modd>/…`
   och modden som `<dependency>` i modDesc.xml.
 

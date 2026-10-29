@@ -553,7 +553,7 @@ def build(project, args):
     obj.write_fields_xml(maps_dir / "fields.xml", fields)
     obj.patch_map_xml(maps_dir / "map.xml")
     write_moddesc_description(mod_dir / "modDesc.xml", title, cfg_map.get("description", ""), sources)
-    vehicle_mods = copy_vehicles(project, maps_dir / "vehicles.xml")       # startgårdens maskiner
+    vehicle_mods = copy_vehicles(project, maps_dir / "vehicles.xml", world, height_at)   # startgårdens maskiner
     add_mod_dependencies(mod_dir / "modDesc.xml",
                          sorted({p["mod"] for p in placements if p.get("mod")} | vehicle_mods))
     make_overview(project, maps_dir / "overview.png", labels, osm, world, cfg.overview_res)
@@ -1060,27 +1060,35 @@ def mask_of(geoms, world, res):
 def vehicle_points(project, world):
     """Startgårdens maskiner (maps/<namn>/fordon.xml) som punkter i SWEREF."""
     import xml.etree.ElementTree as ET
-    src = project.dir / "fordon.xml"
-    if not src.exists():
+    import fordon
+    src, changes = project.dir / "fordon.xml", project.dir / "fordon_andringar.json"
+    edits = json.loads(changes.read_text(encoding="utf-8")) if changes.exists() else {}
+    if not src.exists() and not edits.get("nya"):
         return []
+    text = fordon.apply(src.read_text(encoding="utf-8") if src.exists() else "<vehicles/>", edits, lambda x, z: 0.0)
     out = []
-    for c in ET.parse(src).getroot().iter("component"):
+    for c in ET.fromstring(text).iter("component"):
         x, _y, z = (float(v) for v in c.get("position", "0 0 0").split())
         out.append((world.e0 + x, world.n0 - z))
     return out
 
 
-def copy_vehicles(project, path):
-    """Startgårdens maskiner från import_savegame.py --fordon (maps/<namn>/fordon.xml) som kartans
-    vehicles.xml. Returnerar moddarna de kommer från."""
+def copy_vehicles(project, path, world, height_at):
+    """Startgårdens maskiner från import_savegame.py --fordon (maps/<namn>/fordon.xml) med
+    byggeditorns ändringar (fordon_andringar.json, se fordon.py) som kartans vehicles.xml.
+    Returnerar moddarna de kommer från."""
     import re
-    src = project.dir / "fordon.xml"
-    if not src.exists():
+    import fordon
+    src, changes = project.dir / "fordon.xml", project.dir / "fordon_andringar.json"
+    edits = json.loads(changes.read_text(encoding="utf-8")) if changes.exists() else {}
+    if not src.exists() and not edits.get("nya"):
         return set()
-    text = src.read_text(encoding="utf-8")
+    text = src.read_text(encoding="utf-8") if src.exists() else "<vehicles/>"
+    text = fordon.apply(text, edits, lambda x, z: height_at(world.e0 + x, world.n0 - z))
     path.write_text(text, encoding="utf-8")
     n = text.count("<vehicle ")
-    print(f"  Startgårdens maskiner: {n} (från {project.rel(src)})")
+    print(f"  Startgårdens maskiner: {n}" + (f", varav {len(edits.get('nya', []))} nya och "
+          f"{len(edits.get('flytt', {}))} flyttade grupper från byggeditorn" if edits else ""))
     return set(re.findall(r'filename="\$moddir\$([^/\\"]+)[/\\]', text)) | set(re.findall(r'modName="([^"]+)"', text))
 
 

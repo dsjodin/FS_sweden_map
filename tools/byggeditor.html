@@ -19,7 +19,7 @@
   button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.on { outline: 2px solid var(--sel); }
-  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 8px; }
+  .tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 8px; }
   .tabs button.on { background: var(--accent); color: #fff; outline: none; }
   select, input[type=number] { padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
   input[type=search] { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
@@ -44,7 +44,8 @@ let tool = null, current = null, selDraw = null;            // Måla mark: verkt
 let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null;
 let start = {gard: null, falt: []};   // Start-läget: gårdens mitt, bredd, längd, vridning, byggnader och en punkt per startfält
 let freeItem = null;
-let dragEnded = 0;                    // klicket som följer när man släpper efter en dragning ska inte avmarkera
+let dragEnded = 0;
+let VE = {flytt: {}, bort: [], nya: []}, selVeh = null, newVeh = null, vehQuery = '';   // Maskiner-läget                    // klicket som följer när man släpper efter en dragning ska inte avmarkera
 let overviewLayer = null, groundLayer = null;   // spelets kartbild och marklagren, laddas om efter varje bygge                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
@@ -58,7 +59,7 @@ const ROAD_TYPES = {'grusväg': '#e6d3a1', 'asfaltväg': '#30353a'};
 const map = L.map('map', {crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25});
 const genLayer = L.layerGroup().addTo(map), footLayer = L.layerGroup().addTo(map), drawLayer = L.layerGroup().addTo(map);
 const placeLayer = L.layerGroup().addTo(map), treeLayer = L.layerGroup().addTo(map), editLayer = L.layerGroup().addTo(map);
-const startLayer = L.layerGroup().addTo(map);
+const startLayer = L.layerGroup().addTo(map), vehLayer = L.layerGroup().addTo(map);
 const canvas = L.canvas({padding: 0.5});
 const side = document.getElementById('side');
 const ll = (x, y) => [y, x];   // meter österut/norrut -> Leaflet
@@ -114,6 +115,7 @@ function placeOn(b, c) {
 function rotate(d) { if (!selPlace) return; selPlace.rot = ((selPlace.rot + d + 540) % 360) - 180; save(); draw(); panel(); }
 function nudge(dx, dy) {
   if (mode === 'bygg' && selPlace) { selPlace.x += dx; selPlace.y += dy; save(); draw(); }
+  if (mode === 'fordon' && selVeh) { moveVeh(selVeh, dx, dy); saveVehicles(); drawVehicles(); }
   if (mode === 'trad' && selDraw && selDraw.kind === 'träd') { selDraw.points[0][0] += dx; selDraw.points[0][1] += dy; saveDrawings(); draw(); }
 }
 function removePlace() { if (!selPlace) return; placed = placed.filter(p => p !== selPlace); selPlace = null; save(); draw(); panel(); }
@@ -141,6 +143,103 @@ function dragHandle(latlng, onMove, onEnd) {   // flytta något med musen tills 
 }
 function treeFill(stage) { return CONIFERS.test(stage || '') ? '#1f6b2c' : '#6cc04a'; }   // barrträd mörka, lövträd ljusa
 function treeLabel(type) { const t = D.treeTypes.find(t => t.stage === type); return t ? t.label : type; }
+
+// --- Maskiner -------------------------------------------------------------------------------------
+// Startgårdens maskiner (fordon.xml) med ändringarna i VE (se scripts/fordon.py). En grupp är en maskin
+// med allt som är kopplat till den; den flyttas och vrids tillsammans runt gruppens första maskin.
+let vehTimer;
+function saveVehicles() {
+  clearTimeout(vehTimer);
+  vehTimer = setTimeout(() => fetch('api/vehicles', {method: 'POST', body: JSON.stringify(VE)}), 300);
+}
+function vehInfo(file) {        // namn och mått ur katalogen, annars filnamnet och 3 × 6 m
+  const c = D.vehCat[(file || '').toLowerCase()];
+  return c ? {name: c.name + (c.brand ? ' (' + c.brand + ')' : ''), w: c.width || 3, l: c.length || 6, guess: !c.width, thumb: c.thumb}
+           : {name: (file || '').split('/').pop().replace('.xml', ''), w: 3, l: 6, guess: true};
+}
+function vehPlaced() {          // alla maskiner med ändringarna, i kartans koordinater
+  const out = [], byId = Object.fromEntries(D.vehicles.map(v => [v.id, v]));
+  for (const v of D.vehicles) {
+    if (VE.bort.includes(v.id)) continue;
+    const e = VE.flytt[v.group], p = byId[v.group] || v;
+    let x = v.x, y = v.y, rot = v.rot;
+    if (e) {
+      const r = e.rot * Math.PI / 180, dx = v.x - p.x, dy = v.y - p.y;
+      x = p.x + Math.cos(r) * dx - Math.sin(r) * dy + e.dx; y = p.y + Math.sin(r) * dx + Math.cos(r) * dy + e.dy;
+      rot = v.rot + e.rot;
+    }
+    out.push({key: {group: v.group}, x, y, rot, ...vehInfo(v.file)});
+  }
+  VE.nya.forEach((n, i) => out.push({key: {ny: i}, x: n.x, y: n.y, rot: n.rot, ...vehInfo(n.file), name: n.name || vehInfo(n.file).name}));
+  return out;
+}
+function sameVeh(a, b) { return a && b && (a.group !== undefined ? a.group === b.group : a.ny === b.ny); }
+function moveVeh(key, ddx, ddy) {
+  if (key.ny !== undefined) { VE.nya[key.ny].x += ddx; VE.nya[key.ny].y += ddy; }
+  else { const e = VE.flytt[key.group] || (VE.flytt[key.group] = {dx: 0, dy: 0, rot: 0}); e.dx += ddx; e.dy += ddy; }
+}
+function rotateVeh(d) {
+  if (!selVeh) return;
+  if (selVeh.ny !== undefined) VE.nya[selVeh.ny].rot = ((VE.nya[selVeh.ny].rot + d + 540) % 360) - 180;
+  else { const e = VE.flytt[selVeh.group] || (VE.flytt[selVeh.group] = {dx: 0, dy: 0, rot: 0}); e.rot = ((e.rot + d + 540) % 360) - 180; }
+  saveVehicles(); drawVehicles(); panel();
+}
+function removeVeh() {
+  if (!selVeh) return;
+  if (selVeh.ny !== undefined) VE.nya.splice(selVeh.ny, 1);
+  else { for (const v of D.vehicles) if (v.group === selVeh.group) VE.bort.push(v.id); delete VE.flytt[selVeh.group]; }
+  selVeh = null; saveVehicles(); drawVehicles(); panel();
+}
+function drawVehicles() {
+  vehLayer.clearLayers();
+  for (const v of vehPlaced()) {
+    const sel = sameVeh(v.key, selVeh), p = {x: v.x, y: v.y, w: v.w, l: v.l, rot: v.rot};
+    const poly = L.polygon(corners(p), {color: sel ? '#1d6fd6' : '#20304a', weight: sel ? 3 : 1.5, fillColor: '#e8c33a',
+      fillOpacity: 0.8, dashArray: v.guess ? '4 3' : null, interactive: mode === 'fordon'})
+      .bindTooltip(v.name + (v.guess ? ' (mått okända)' : ''), {sticky: true}).addTo(vehLayer);
+    const r = v.rot * Math.PI / 180, tip = [v.x + Math.sin(r) * (v.l / 2 + 1.5), v.y - Math.cos(r) * (v.l / 2 + 1.5)];
+    L.polyline([ll(v.x, v.y), ll(...tip)], {color: '#c62828', weight: 3, interactive: false}).addTo(vehLayer);
+    poly.on('click', L.DomEvent.stop);
+    poly.on('mousedown', e => {
+      L.DomEvent.stop(e); selVeh = v.key; tool = null;
+      let last = e.latlng;
+      dragHandle(e.latlng, ln => { moveVeh(v.key, ln.lng - last.lng, ln.lat - last.lat); last = ln; drawVehicles(); },
+                 () => { saveVehicles(); drawVehicles(); panel(); });
+      drawVehicles(); panel();
+    });
+  }
+}
+function vehCatalogList() {
+  const words = vehQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const list = D.vehicleCatalog.filter(c => words.every(w => (c.name + ' ' + (c.brand || '') + ' ' + (c.category || '') + ' '
+    + (c.mod || '')).toLowerCase().includes(w))).slice(0, 80);
+  return list.map(c => `<div class="item" data-v="${D.vehicleCatalog.indexOf(c)}">
+      ${c.thumb ? `<img src="fimg/${c.thumb.split('/').pop()}" loading="lazy" alt="">` : '<div class="ph"></div>'}
+      <div><b>${esc(c.name)}</b>${c.brand ? ' · ' + esc(c.brand) : ''}<br>
+      <span class="fit">${c.width ? c.width + ' × ' + c.length + ' m' : 'mått saknas'}</span><br>
+      <span class="muted">${esc(c.mod || 'spelet')} · ${esc(c.category || '')}</span></div></div>`).join('')
+    || '<p class="muted">Inga träffar. Kör fordon_katalog.py om katalogen är tom.</p>';
+}
+function panelFordon() {
+  const placedV = vehPlaced();
+  let h = `<h2>Startgårdens maskiner</h2><p class="muted">${placedV.length} maskiner. Dra en maskin för att flytta den
+    (påkopplade redskap följer med), <kbd>Q</kbd>/<kbd>E</kbd> vrider (med <kbd>Shift</kbd> 15°), <kbd>Delete</kbd> tar bort.
+    Den röda pilen visar fronten. Streckade rutor har okända mått. Höjden räknas om vid bygget.</p>`;
+  if (selVeh) {
+    const members = selVeh.ny !== undefined ? [VE.nya[selVeh.ny]] : D.vehicles.filter(v => v.group === selVeh.group);
+    h += `<h2>Vald</h2><div>${members.map(m => esc(vehInfo(m.file).name)).join('<br>')}</div>
+      <div class="row"><button data-vr="-15">↺ 15°</button><button data-vr="-1">↺ 1°</button><button data-vr="1">↻ 1°</button>
+      <button data-vr="15">↻ 15°</button><button data-vr="180">Vänd 180°</button></div>
+      <div class="row"><button id="vdel">Ta bort</button>${selVeh.group !== undefined && VE.flytt[selVeh.group]
+        ? '<button id="vreset">Tillbaka till sparfilens plats</button>' : ''}</div>`;
+  }
+  h += `<h2>Lägg till maskin</h2><p class="muted">${tool === 'nyfordon' && newVeh ? `Klicka i kartan där <b>${esc(newVeh.name)}</b>
+    ska stå (<kbd>Esc</kbd> avbryter).` : 'Välj en maskin och klicka i kartan. Nya maskiner är ett test: säg till hur de ser ut i spelet.'}</p>
+    <input type="search" id="vq" placeholder="Sök maskin, märke eller kategori …" value="${esc(vehQuery)}">
+    <div id="vlist">${vehCatalogList()}</div>`;
+  if (VE.bort.length) h += `<p class="muted">${VE.bort.length} borttagna maskiner. <button id="vundo">Ångra borttagningar</button></p>`;
+  return h;
+}
 
 // --- Startgård och startfält ----------------------------------------------------------------------
 function inside(pt, poly) {      // punkt i polygon (strålmetoden)
@@ -442,16 +541,17 @@ function panel() {
   let h = `<div class="tabs"><button data-m="bygg" class="${mode === 'bygg' ? 'on' : ''}">Byggnader</button>
     <button data-m="mala" class="${mode === 'mala' ? 'on' : ''}">Måla mark</button>
     <button data-m="trad" class="${mode === 'trad' ? 'on' : ''}">Träd</button>
-    <button data-m="start" class="${mode === 'start' ? 'on' : ''}">Start</button></div>
+    <button data-m="start" class="${mode === 'start' ? 'on' : ''}">Start</button>
+    <button data-m="fordon" class="${mode === 'fordon' ? 'on' : ''}">Maskiner</button></div>
     <div id="stats" class="stats"></div>`;
-  h += mode === 'bygg' ? panelBygg() : mode === 'mala' ? panelMala() : mode === 'trad' ? panelTrad() : panelStart();
+  h += mode === 'bygg' ? panelBygg() : mode === 'mala' ? panelMala() : mode === 'trad' ? panelTrad() : mode === 'start' ? panelStart() : panelFordon();
   h += `<h2>Bygg</h2><div class="row"><button class="primary" id="build" ${building ? 'disabled' : ''}>
       ${building ? 'Bygger …' : 'Bygg kartan'}</button></div><pre id="log" ${buildLog ? '' : 'hidden'}>${esc(buildLog)}</pre>`;
   side.innerHTML = h; drawStats();
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
   side.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
     mode = b.dataset.m; tool = null; current = null; selDraw = null; selFoot = null; selPlace = null;
-    map.doubleClickZoom.enable(); draw(); drawGenerated(); panel();
+    map.doubleClickZoom.enable(); draw(); drawGenerated(); drawVehicles(); panel();
   });
   // Byggnader
   side.querySelectorAll('[data-r]').forEach(b => b.onclick = () => rotate(+b.dataset.r));
@@ -483,6 +583,16 @@ function panel() {
   on('tc', 'onchange', e => { selDraw.type = e.target.value; selDraw.art = D.treeTypes.find(t => t.stage === selDraw.type).art; saveDrawings(); draw(); });
   on('dt', 'onclick', removeDraw);
   on('tr', 'onclick', () => { startTool(tool === 'tabort' ? null : 'tabort'); drawGenerated(); });
+  // Maskiner
+  side.querySelectorAll('[data-vr]').forEach(b => b.onclick = () => rotateVeh(+b.dataset.vr));
+  on('vdel', 'onclick', removeVeh);
+  on('vreset', 'onclick', () => { delete VE.flytt[selVeh.group]; saveVehicles(); drawVehicles(); panel(); });
+  on('vundo', 'onclick', () => { VE.bort = []; saveVehicles(); drawVehicles(); panel(); });
+  const bindVeh = () => side.querySelectorAll('[data-v]').forEach(el => el.onclick = () => {
+    newVeh = D.vehicleCatalog[+el.dataset.v]; tool = 'nyfordon'; panel();
+  });
+  on('vq', 'oninput', e => { vehQuery = e.target.value; document.getElementById('vlist').innerHTML = vehCatalogList(); bindVeh(); });
+  bindVeh();
   // Start
   on('pg', 'onclick', () => startTool(tool === 'gard' ? null : 'gard'));
   on('rg', 'onclick', () => { start.gard = null; saveStart(); draw(); panel(); });
@@ -515,6 +625,7 @@ async function startBuild() {
     await fetch('api/save', {method: 'POST', body: JSON.stringify(placed)});
     await fetch('api/drawings', {method: 'POST', body: JSON.stringify(drawings)});
     await fetch('api/start', {method: 'POST', body: JSON.stringify(start)});
+    await fetch('api/vehicles', {method: 'POST', body: JSON.stringify(VE)});
     const r = await fetch('api/build', {method: 'POST'});
     if (!r.ok) buildLog += 'Ett bygge pågår redan, visar dess logg.\n';
   } catch (e) {
@@ -545,6 +656,11 @@ map.on('click', e => {
              length: Math.max(c.width, c.length), width: Math.min(c.width, c.length)}, c);
     tool = null; freeItem = null; draw(); panel(); return;
   }
+  if (mode === 'fordon' && tool === 'nyfordon' && newVeh) {
+    const [x, y] = xy(e.latlng);
+    VE.nya.push({file: newVeh.file, mod: newVeh.mod || null, name: newVeh.name, x, y, rot: 0});
+    selVeh = {ny: VE.nya.length - 1}; tool = null; newVeh = null; saveVehicles(); drawVehicles(); panel(); return;
+  }
   if (mode === 'start' && tool === 'gard') {
     start.gard = xy(e.latlng).map(Math.round); tool = null; saveStart(); draw(); panel(); return;
   }
@@ -558,7 +674,9 @@ map.on('click', e => {
     const d = {kind: 'träd', type: t.stage, art: t.art, points: [xy(e.latlng)]};
     drawings.push(d); selDraw = d; saveDrawings(); draw(); panel(); return;
   }
-  selFoot = selPlace = selDraw = null; draw(); panel();
+  selFoot = selPlace = selDraw = null;
+  if (selVeh) { selVeh = null; drawVehicles(); }
+  draw(); panel();
 });
 map.on('dblclick', () => { if (current) { finishDrawing(); tool = null; map.doubleClickZoom.enable(); panel(); } });
 document.addEventListener('keydown', e => {
@@ -575,13 +693,15 @@ document.addEventListener('keydown', e => {
   else if (k === 'ArrowRight') nudge(big ? 2 : 0.5, 0);
   else if (k === 'ArrowUp') nudge(0, big ? 2 : 0.5);
   else if (k === 'ArrowDown') nudge(0, big ? -2 : -0.5);
-  else if (k === 'Delete' || k === 'Backspace') { if (mode === 'bygg') removePlace(); else removeDraw(); }
+  else if (k === 'Delete' || k === 'Backspace') { if (mode === 'bygg') removePlace(); else if (mode === 'fordon') removeVeh(); else removeDraw(); }
   else if (mode === 'bygg' && (k === 'q' || k === 'Q')) rotate(big ? -15 : -1);
   else if (mode === 'bygg' && (k === 'e' || k === 'E')) rotate(big ? 15 : 1);
   else if (mode === 'bygg' && (k === 'f' || k === 'F')) rotate(180);
   else if (mode === 'start' && (k === 'q' || k === 'Q')) rotateFarm(big ? -15 : -1);
+  else if (mode === 'fordon' && (k === 'q' || k === 'Q')) rotateVeh(big ? -15 : -1);
+  else if (mode === 'fordon' && (k === 'e' || k === 'E')) rotateVeh(big ? 15 : 1);
   else if (mode === 'start' && (k === 'e' || k === 'E')) rotateFarm(big ? 15 : 1);
-  else if (k === 'Escape') { selFoot = selPlace = selDraw = null; tool = null; draw(); panel(); }
+  else if (k === 'Escape') { selFoot = selPlace = selDraw = selVeh = newVeh = null; tool = null; draw(); drawVehicles(); panel(); }
   else return;
   e.preventDefault();
 });
@@ -589,6 +709,9 @@ document.addEventListener('keydown', e => {
 fetch('api/data').then(r => r.json()).then(d => {
   D = d; placed = d.placed || []; drawings = d.drawings || []; D.doors = d.doors || {};
   D.genTrees = d.genTrees || []; D.treeTypes = d.treeTypes || []; D.fields = d.fields || []; D.farmSize = d.farmSize || 100;
+  D.vehicles = d.vehicles || []; D.vehicleCatalog = d.vehicleCatalog || [];
+  D.vehCat = Object.fromEntries(D.vehicleCatalog.map(c => [c.file.toLowerCase(), c]));
+  VE = Object.assign({flytt: {}, bort: [], nya: []}, d.vehicleEdits || {});
   const s0 = d.start || {};
   start = {gard: s0.gard || null, falt: s0.falt || [], bredd: s0.bredd || D.farmSize, langd: s0.langd || D.farmSize,
            vridning: s0.vridning || 0, byggnader: s0.byggnader !== false, plana: s0.plana !== false};
@@ -630,11 +753,11 @@ fetch('api/data').then(r => r.json()).then(d => {
     ctl.addTo(map);
   }
   Object.assign(overlays, {'Verkliga byggnader': footLayer, 'Ritade ytor och vägar': drawLayer,
-    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer, 'Träd från senaste bygget': genLayer,
+    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer, 'Träd från senaste bygget': genLayer, 'Maskiner': vehLayer,
     'Fält och startgård': startLayer});
   L.control.layers(bases, overlays, {collapsed: false}).addTo(map);
   L.rectangle([[-D.half, -D.half], [D.half, D.half]], {color: '#fff', weight: 1, dashArray: '6 4', fill: false, interactive: false}).addTo(map);
   map.fitBounds([[-D.half, -D.half], [D.half, D.half]]);
-  draw(); drawGenerated(); panel();
+  draw(); drawGenerated(); drawVehicles(); panel();
 });
 </script></body></html>

@@ -132,6 +132,16 @@ def main():
     store = project.dir / "byggnader.json"
     drawings = project.dir / "ritningar.json"
     start = project.dir / "start.json"                    # Start-läget: gårdens plats och startfälten
+    vehicle_edits = project.dir / "fordon_andringar.json"  # Maskiner-läget (se fordon.py)
+    vehicle_catalog = ROOT / "build" / "fordon_katalog"   # fordon_katalog.py
+    import fordon
+
+    def vehicles():
+        """Startgårdens maskiner, ändringarna och katalogen (mått, namn och bild per fil)."""
+        cat = json.loads((vehicle_catalog / "katalog.json").read_text(encoding="utf-8")) \
+            if (vehicle_catalog / "katalog.json").exists() else []
+        edits = json.loads(vehicle_edits.read_text(encoding="utf-8")) if vehicle_edits.exists() else {}
+        return {"vehicles": fordon.read(project.dir / "fordon.xml"), "vehicleEdits": edits, "vehicleCatalog": cat}
     import fs25_objects as obj
 
     def build_fields():
@@ -184,12 +194,16 @@ def main():
                 chosen = json.loads(start.read_text(encoding="utf-8")) if start.exists() else {}
                 return self.send(200, json.dumps({**data, "placed": placed, "doors": doors, "drawings": drawn,
                                                   "treeTypes": tree_types(), "genTrees": generated_trees(),
-                                                  "start": chosen, "fields": build_fields(),
+                                                  "start": chosen, "fields": build_fields(), **vehicles(),
                                                   "farmSize": obj.FARM_SIZE}).encode())
             if path == "/api/build":
                 return self.send(200, json.dumps(build).encode())
             if path in files and files[path][0].exists():
                 return self.send(200, files[path][0].read_bytes(), files[path][1])
+            if path.startswith("/fimg/"):
+                f = vehicle_catalog / "img" / Path(path).name
+                if f.exists():
+                    return self.send(200, f.read_bytes(), "image/png")
             if path.startswith("/img/"):
                 f = (CATALOG / "img" / Path(path).name)
                 if f.exists():
@@ -206,6 +220,10 @@ def main():
                 drawn = json.loads(body or b"[]")
                 drawings.write_text(json.dumps(drawn, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
                 return self.send(200, json.dumps({"ok": True, "count": len(drawn)}).encode())
+            if self.path == "/api/vehicles":
+                vehicle_edits.write_text(json.dumps(json.loads(body or b"{}"), indent=1, ensure_ascii=False) + "\n",
+                                         encoding="utf-8")
+                return self.send(200, b'{"ok": true}')
             if self.path == "/api/start":
                 start.write_text(json.dumps(json.loads(body or b"{}"), indent=1) + "\n", encoding="utf-8")
                 return self.send(200, b'{"ok": true}')
