@@ -30,6 +30,8 @@
   pre { white-space: pre-wrap; font-size: 11px; max-height: 260px; overflow: auto; background: var(--bg); padding: 6px; border-radius: 6px; }
   .stats { font-size: 12px; margin-bottom: 4px; }
   .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+  .opbox { background: var(--panel); color: var(--fg); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+  .opbox input { vertical-align: middle; width: 120px; }
   kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 11px; }
 </style></head>
 <body><div id="app"><div id="map"></div><div id="side"></div></div>
@@ -41,7 +43,8 @@ let selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = fa
 let tool = null, current = null, selDraw = null;            // Måla mark: verktyg, pågående ritning, vald ritning
 let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null, showGen = false;
 let start = {gard: null, falt: []};   // Start-läget: gårdens mitt, bredd, längd, vridning, byggnader och en punkt per startfält
-let freeItem = null;                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
+let freeItem = null;
+let overviewLayer = null;             // spelets kartbild, laddas om efter varje bygge                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
                     'skog': '#2e7d32', 'sudda vägar': '#e53935', 'inga träd': '#ff9800'};
@@ -490,7 +493,10 @@ async function startBuild() {
     } catch (e) { buildLog += '.'; }
     showBuild();
     if (building) setTimeout(poll, 1500);
-    else fetch('api/data').then(r => r.json()).then(d => { D.genTrees = d.genTrees; D.fields = d.fields || []; drawGenerated(); draw(); panel(); });
+    else fetch('api/data').then(r => r.json()).then(d => {
+      D.genTrees = d.genTrees; D.fields = d.fields || []; drawGenerated(); draw(); panel();
+      if (overviewLayer) overviewLayer.setUrl('bg/overview.png?v=' + Date.now());   // nya kartbilden
+    });
   };
   setTimeout(poll, 800);
 }
@@ -551,13 +557,43 @@ fetch('api/data').then(r => r.json()).then(d => {
   start = {gard: s0.gard || null, falt: s0.falt || [], bredd: s0.bredd || D.farmSize, langd: s0.langd || D.farmSize,
            vridning: s0.vridning || 0, byggnader: s0.byggnader !== false, plana: s0.plana !== false};
   D.catalog.forEach(c => { if (c.thumb) c.thumb = 'img/' + c.thumb.split('/').pop(); });
+  // Bakgrund: spelets kartbild (från senaste bygget) eller ortofotot. Ortofotot kan också ligga
+  // genomskinligt ovanpå spelets karta som stöd när man målar. Båda under det som ritas.
+  map.createPane('bakgrund').style.zIndex = 250;
+  map.createPane('stod').style.zIndex = 260;
+  const bounds = bg => [[-bg.half, -bg.half], [bg.half, bg.half]];
+  const ov = D.backgrounds.find(b => b.file.includes('overview')), ortho = D.backgrounds.find(b => b.file.includes('ortofoto'));
   const bases = {};
-  for (const bg of D.backgrounds) bases[bg.name] = L.imageOverlay(bg.file, [[-bg.half, -bg.half], [bg.half, bg.half]]);
+  if (ov) bases['Spelets karta'] = overviewLayer = L.imageOverlay(ov.file + '?v=' + Date.now(), bounds(ov), {pane: 'bakgrund'});
+  if (ortho) bases['Ortofoto'] = L.imageOverlay(ortho.file, bounds(ortho), {pane: 'bakgrund'});
   bases['Ingen bakgrund'] = L.layerGroup();
   Object.values(bases)[0].addTo(map);
-  L.control.layers(bases, {'Verkliga byggnader': footLayer, 'Ritade ytor och vägar': drawLayer,
-    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer, 'Fält och startgård': startLayer},
-    {collapsed: false}).addTo(map);
+  const overlays = {};
+  if (ortho && ov) {
+    let op = 0.4;
+    try { op = parseFloat(localStorage.getItem('byggeditor.ortoop') || '0.4'); } catch (e) {}
+    const orthoOver = L.imageOverlay(ortho.file, bounds(ortho), {pane: 'stod', opacity: op});
+    overlays['Ortofoto genomskinligt'] = orthoOver;
+    try { if (localStorage.getItem('byggeditor.orto') !== 'av') orthoOver.addTo(map); } catch (e) { orthoOver.addTo(map); }
+    map.on('overlayadd overlayremove', e => {
+      if (e.layer === orthoOver) try { localStorage.setItem('byggeditor.orto', e.type === 'overlayadd' ? 'på' : 'av'); } catch (err) {}
+    });
+    const ctl = L.control({position: 'bottomleft'});
+    ctl.onAdd = () => {
+      const div = L.DomUtil.create('div', 'opbox');
+      div.innerHTML = `ortofoto <input type="range" min="0" max="100" value="${Math.round(op * 100)}">`;
+      L.DomEvent.disableClickPropagation(div);
+      div.querySelector('input').oninput = ev => {
+        orthoOver.setOpacity(ev.target.value / 100);
+        try { localStorage.setItem('byggeditor.ortoop', ev.target.value / 100); } catch (err) {}
+      };
+      return div;
+    };
+    ctl.addTo(map);
+  }
+  Object.assign(overlays, {'Verkliga byggnader': footLayer, 'Ritade ytor och vägar': drawLayer,
+    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer, 'Fält och startgård': startLayer});
+  L.control.layers(bases, overlays, {collapsed: false}).addTo(map);
   L.rectangle([[-D.half, -D.half], [D.half, D.half]], {color: '#fff', weight: 1, dashArray: '6 4', fill: false, interactive: false}).addTo(map);
   map.fitBounds([[-D.half, -D.half], [D.half, D.half]]);
   draw(); panel();
