@@ -78,6 +78,7 @@ GROUND = [
     ("gravel01", "grusväg"),
     ("asphalt01", "asfalt"),
 ]
+GROUND_NAMES = [name for name, _ in GROUND]
 ROAD_STYLE = {  # vägklass från analyze_area -> (marklager, bredd i meter)
     "motorväg/riksväg": ("asphalt01", 12),
     "länsväg": ("asphalt01", 7),
@@ -100,6 +101,8 @@ START_MAX_HA = 80.0          # ha: största fastighet som väljs som startgård 
 LAND_PRICE_SCALE = {"åker": 1.0, "skog": 0.6, "tomt": 1.5, "övrigt": 0.5}   # del av åkerpriset
 NO_BUILD_WATER = 2.5         # m på var sida om diken och bäckar där man inte får bygga
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
+YARD_APRON = 4.0             # m grus runt byggnader från byggeditorn
+VEHICLE_CLEAR = 8.0          # m utan träd runt startgårdens maskiner
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
 MIN_FIELD_HA = 0.5
@@ -362,13 +365,23 @@ def build(project, args):
     dem = np.round(game / gen_i3d.HEIGHT_SCALE * 65535).astype(np.uint16)
     height_at = height_sampler(game, world)
     idx_yard = [name for name, _ in GROUND].index("gravelSmall01")
-    from rasterio.features import rasterize
-    yard = rasterize(((s_.box, 1) for s_ in sites), out_shape=labels.shape,
-                     transform=info_transform(world, labels.shape[0]), dtype="uint8") > 0
-    labels[yard] = idx_yard
+    # Gårdsplanerna. En egen gårdsplan (Start-läget, utan spelets byggnader) blir gräs med grus under och
+    # runt byggnaderna, och träden från laserdatan får stå kvar där, utom vid byggnader och maskiner.
+    # Övriga platser (spelets gård, spannmålsmottagningen) blir grus som förut. Byggeditorns målade ytor
+    # (Måla mark) går före inne på gårdsplanerna.
+    own_yard = bool(chosen["gard"]) and not chosen["byggnader"]
+    on_site = mask_of([s_.box for s_ in sites], world, labels.shape[0])
+    labels[mask_of([farm.box] if own_yard else [], world, labels.shape[0])] = GROUND_NAMES.index("grass01")
+    labels[mask_of([s_.box.buffer(YARD_APRON) if s_.name.startswith("byggnad") else s_.box for s_ in sites
+                    if not (own_yard and s_ is farm)], world, labels.shape[0])] = idx_yard
+    for layer, geom in drawn.overrides(drawings):
+        labels[mask_of([geom], world, labels.shape[0]) & on_site] = GROUND_NAMES.index(layer)
     spawn_pt = Point(*farm.at(-15, min(38, farm.length / 2 - 2)))   # framför gårdshuset
-    no_trees = unary_union([cut, field_union, drawn.no_tree_zone(drawings)]
-                           + [s_.box.buffer(2 if s_.name.startswith("byggnad") else 10) for s_ in sites])
+    keep_clear = ([Point(p).buffer(VEHICLE_CLEAR) for p in vehicle_points(project, world)]
+                  + [spawn_pt.buffer(5), Point(*farm.at(min(38, farm.width / 2 - 6), 0)).buffer(25)])
+    no_trees = unary_union([cut, field_union, drawn.no_tree_zone(drawings)] + keep_clear
+                           + [s_.box.buffer(2 if s_.name.startswith("byggnad") else 10) for s_ in sites
+                              if not (own_yard and s_ is farm)])
     conifer = [g for c, g in areas if c == "barrskog"]
     broadleaf = [g for c, g in areas if c == "forest"]
     share = sum(g.area for g in conifer) / max(sum(g.area for g in conifer + broadleaf), 1)
@@ -848,6 +861,28 @@ def load_placements(project):
     """Objekt från import_savegame.py: [{filename, position, rotation, mod}]."""
     path = project.dir / "placeringar.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+
+
+def mask_of(geoms, world, res):
+    """Rutnät (res × res, norr uppåt) som är sant inne i geometrierna."""
+    from rasterio.features import rasterize
+    if not geoms:
+        return np.zeros((res, res), bool)
+    return rasterize(((g, 1) for g in geoms), out_shape=(res, res), transform=info_transform(world, res),
+                     dtype="uint8") > 0
+
+
+def vehicle_points(project, world):
+    """Startgårdens maskiner (maps/<namn>/fordon.xml) som punkter i SWEREF."""
+    import xml.etree.ElementTree as ET
+    src = project.dir / "fordon.xml"
+    if not src.exists():
+        return []
+    out = []
+    for c in ET.parse(src).getroot().iter("component"):
+        x, _y, z = (float(v) for v in c.get("position", "0 0 0").split())
+        out.append((world.e0 + x, world.n0 - z))
+    return out
 
 
 def copy_vehicles(project, path):
