@@ -126,8 +126,11 @@ DECO_STATES = {
 # och laxbärsbusken används inte.
 FOREST_FLOOR = [("dry branches", 3), ("starflower", 2), ("bunchberry", 2), ("deerFern", 3), ("swordFern", 1),
                 ("clovers", 1), ("grass", 2), (None, 4)]     # skogsstjärna, hönsbär, ormbunkar, ris
-VERGE = [("grassMedium", 6), ("smallDenseMix", 2), ("apera", 2), ("rumex", 1), ("cirsium", 1),
-         ("papaverRhoeas", 1), ("whiteTallWeed", 1), ("greenTallWeed", 1)]   # vägrenar: gräs, ven, syra, tistel, vallmo
+VERGE = [("grassMedium", 8), ("smallDenseMix", 2), ("apera", 2), ("rumex", 1),
+         ("greenTallWeed", 1)]                           # vägrenar: gräs, ven, syra och högt ogräs
+VERGE_FLOWERS = [("papaverRhoeas", 1), ("cirsium", 1), ("whiteTallWeed", 1), (None, 12)]   # vallmo, tistel, hundkex
+FLOWER_PATCH = 2.5           # m: blommorna i små, glesa klungor ovanpå vägrenen
+FLOWER_SPARSE = 0.5          # andel av en blomklunga som är tom
 VERGE_WIDTH = 4.0            # m vägren med örter utanför vägkanten
 REEDS = [("typhaLatifoliaSmall", 2), ("typhaLatifoliaMedium", 3), ("typhaLatifoliaLarge", 2), (None, 3)]   # kaveldun
 REED_WIDTH = 3.0             # m kaveldun längs diken, åar och stränder
@@ -922,18 +925,18 @@ def fruit_value(layer, state):
     return (names.index(layer) + 1) | (state << 5)
 
 
-def patches(shape, res, world, mix, layer, seed):
-    """Växter i fläckar (PATCH m) efter vikterna i mix, som värden i densityMap_fruits (0 = bar mark).
-    layer "decoBush" ger värdena för buskarnas eget lager."""
+def patches(shape, res, world, mix, layer, seed, size=PATCH, sparse=0.15):
+    """Växter i fläckar (size m) efter vikterna i mix, som värden i densityMap_fruits (0 = bar mark), med
+    andelen sparse tomma pixlar. layer "decoBush" ger värdena för buskarnas eget lager."""
     rng = np.random.default_rng(seed)
-    cell = max(1, int(round(PATCH * res / world.size)))
+    cell = max(1, int(round(size * res / world.size)))
     n = -(-shape[0] // cell)
     weights = np.array([w for _, w in mix], float)
     pick = rng.choice(len(mix), (n, n), p=weights / weights.sum())
     value = (lambda st: BUSH_STATES.index(st) + 1) if layer == "decoBush" else (lambda st: fruit_value(layer, st))
     lut = np.array([value(st) if st else 0 for st, _ in mix], np.uint16)
     out = np.repeat(np.repeat(lut[pick], cell, axis=0), cell, axis=1)[:shape[0], :shape[1]]
-    out[rng.integers(0, 100, shape, dtype=np.uint8) < 15] = 0   # glesare i fläckarna
+    out[rng.integers(0, 100, shape, dtype=np.uint8) < int(sparse * 100)] = 0   # glesare i fläckarna
     return out
 
 
@@ -996,6 +999,8 @@ def paint_vegetation(path, fields, labels, lawns, roads, world, res, waterways=(
     verge = grass & mask_of([line.buffer(ROAD_STYLE[cls][1] / 2 + VERGE_WIDTH) for cls, line in roads
                              if line.intersects(sq)], world, res)
     veg[verge] = patches(veg.shape, res, world, VERGE, "decoFoliage", 21)[verge]
+    flowers = patches(veg.shape, res, world, VERGE_FLOWERS, "decoFoliage", 24, FLOWER_PATCH, FLOWER_SPARSE)
+    veg[verge & (flowers > 0)] = flowers[verge & (flowers > 0)]
     forest = ground("forestLeaves01")
     veg[forest] = patches(veg.shape, res, world, FOREST_FLOOR, "forestPlants", 22)[forest]
     shore = [ln.buffer(REED_WIDTH) for _, ln in waterways if ln.intersects(sq)]
