@@ -417,10 +417,12 @@ def build(project, args):
     # Övriga platser (spelets gård, spannmålsmottagningen) blir grus som förut. Byggeditorns målade ytor
     # (Måla mark) går före inne på gårdsplanerna.
     own_yard = bool(chosen["gard"]) and not chosen["byggnader"]
-    on_site = mask_of([s_.box for s_ in sites], world, labels.shape[0])
-    labels[mask_of([farm.box] if own_yard else [], world, labels.shape[0])] = GROUND_NAMES.index("grass01")
+    # Vägarna (grus och asfalt i marklagren) ligger kvar: gårdsplanerna målas bara runt dem.
+    free = ~np.isin(labels, [GROUND_NAMES.index("gravel01"), GROUND_NAMES.index("asphalt01")])
+    on_site = mask_of([s_.box for s_ in sites], world, labels.shape[0]) & free
+    labels[mask_of([farm.box] if own_yard else [], world, labels.shape[0]) & free] = GROUND_NAMES.index("grass01")
     labels[mask_of([s_.box.buffer(YARD_APRON) if s_.name.startswith("byggnad") else s_.box for s_ in sites
-                    if not (own_yard and s_ is farm)], world, labels.shape[0])] = idx_yard
+                    if not (own_yard and s_ is farm)], world, labels.shape[0]) & free] = idx_yard
     for layer, geom in drawn.overrides(drawings):
         labels[mask_of([geom], world, labels.shape[0]) & on_site] = GROUND_NAMES.index(layer)
     spawn_pt = Point(*farm.at(-15, min(38, farm.length / 2 - 2)))   # framför gårdshuset
