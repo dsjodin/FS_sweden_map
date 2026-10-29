@@ -111,18 +111,32 @@ def main():
         with SlashZip(path) as z:
             print(f"  spelets maskiner ({path.name}): {scan(z, None, '', items)}")
     mods = ROOT / "data" / "mods"
+    found, without = set(), []
     for mod, path in find_mods(mods) if mods.exists() else []:
         archives = [(mod, FolderMod(path), None)] if path.is_dir() else []
         if not path.is_dir():
             try:
                 archives = unwrap(path)
             except zipfile.BadZipFile:
+                print(f"  {path.name}: inte en zip-fil, hoppar över")
                 continue
-        for name, archive, _warning in archives:
+        for name, archive, warning in archives:
             with archive:
                 n = scan(archive, name, f"$moddir${name}/", items)
+            found.add(name)
+            if warning:
+                print(f"  OBS: {name} {warning}")
             if n:
                 print(f"  {name}: {n}")
+            else:
+                without.append(name)
+    print(f"{len(found)} moddar i {mods.relative_to(ROOT)}, {len(without)} utan maskiner (byggnader med mera): "
+          + ", ".join(sorted(without)))
+    import fordon                                    # moddar som startmaskinerna kräver men som saknas här
+    used = {v["file"].split("/")[0].replace("$moddir$", "") for v in fordon.read(ROOT / "maps" / "tysslinge" / "fordon.xml")
+            if v["file"].startswith("$moddir$")} if (ROOT / "maps" / "tysslinge" / "fordon.xml").exists() else set()
+    if used - found:
+        print("Moddar i startmaskinerna som saknas i data/mods: " + ", ".join(sorted(used - found)))
     (OUT / "katalog.json").write_text(json.dumps(items, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     cats = {}
     for i in items:
