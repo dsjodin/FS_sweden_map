@@ -102,6 +102,14 @@ LAND_PRICE_SCALE = {"åker": 1.0, "skog": 0.6, "tomt": 1.5, "övrigt": 0.5}   # 
 NO_BUILD_WATER = 2.5         # m på var sida om diken och bäckar där man inte får bygga
 GROUND_CULTIVATED = 2        # terrainDetail groundType 2 = kultiverad
 YARD_APRON = 4.0             # m grus runt byggnader från byggeditorn
+# Växtlighet målad i densityMap_fruits. Värdet är lagrets nummer i fruits-lagret (1 = decoFoliage, i
+# ordningen i base_foliage.json) plus tillståndet × 32; tillstånden räknas från 1 i foliage-filens
+# ordning. Avläst och bekräftat i GIANTS Editor (Foliage-panelen): gräs harvestReady = 6 + 4 × 32 = 134,
+# vete harvestReady = 7 + 8 × 32 = 263, harvested = 10, dead = 9.
+CROP_STATE = {"WHEAT": ("wheat", 8), "BARLEY": ("barley", 7), "OAT": ("oat", 5), "CANOLA": ("canola", 9),
+              "GRASS": ("grass", 4)}      # skördeklart, ur foliage-filerna ("0 0 0 1 - harvest ready" = 8)
+OPEN_GRASS = ("grass", 3)    # greenMiddle: gräs på öppen mark (marklagret grass01 utanför fälten)
+LAWN_GRASS = ("grass", 2)    # greenSmall: kortare gräs på en egen gårdsplan
 VEHICLE_CLEAR = 8.0          # m utan träd runt startgårdens maskiner
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
@@ -461,6 +469,7 @@ def build(project, args):
     for geom, _block, _ in fields:
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
+    paint_vegetation(data_dir / "densityMap_fruits.gdm", fields, labels, [farm.box] if own_yard else [], world, N)
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
     farm_arr = paint_farmlands(fields, properties, lone_id, farm.box, world, cfg.il_res["farmland"])
     if not properties:
@@ -866,6 +875,34 @@ def load_placements(project):
     """Objekt från import_savegame.py: [{filename, position, rotation, mod}]."""
     path = project.dir / "placeringar.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+
+
+def fruit_value(layer, state):
+    """Värdet i densityMap_fruits för ett växtlager och tillstånd (se CROP_STATE)."""
+    names = [t["name"] for L in gen_i3d.FOLIAGE["layers"] if L["attrs"].get("numTypeIndexChannels") == "5"
+             for t in L["types"]]
+    return (names.index(layer) + 1) | (state << 5)
+
+
+def paint_vegetation(path, fields, labels, lawns, world, res):
+    """Grödor på fälten (skördeklara, som fields.xml), gräs på öppen mark och kortare gräs på
+    gårdsplanens gräsytor, i densityMap_fruits."""
+    veg = np.zeros((res, res), np.uint16)
+    f = res // labels.shape[0]
+    grass = np.repeat(np.repeat(labels == GROUND_NAMES.index("grass01"), f, axis=0), f, axis=1)
+    veg[grass] = fruit_value(*OPEN_GRASS)
+    veg[grass & mask_of(lawns, world, res)] = fruit_value(*LAWN_GRASS)
+    crops = [c for c in CROP_STATE]
+    img = Image.new("L", (res, res), 0)
+    draw = ImageDraw.Draw(img)
+    for geom, _block, code in fields:
+        fruit = obj.CROP_FRUIT.get(code)
+        draw_polygon(draw, geom.buffer(-1), world, res, crops.index(fruit) + 1 if fruit in CROP_STATE else 255)
+    codes = np.array(img)
+    veg[codes > 0] = 0                                      # fält utan känd gröda: plöjda, ingen växtlighet
+    for k, fruit in enumerate(crops, 1):
+        veg[codes == k] = fruit_value(*CROP_STATE[fruit])
+    binfmt.paint_gdm(str(path), res, veg, 10, 2, 5, range_splits=(5,))
 
 
 def mask_of(geoms, world, res):
