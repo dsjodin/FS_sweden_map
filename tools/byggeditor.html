@@ -139,7 +139,7 @@ function dragHandle(latlng, onMove, onEnd) {   // flytta något med musen tills 
   const up = () => { map.off('mousemove', move); map.off('mouseup', up); map.dragging.enable(); dragEnded = Date.now(); onEnd(); };
   map.on('mousemove', move); map.on('mouseup', up);
 }
-function treeRadius(d) { const m = /stage(\d+)/.exec(d.type); return 3 + (m ? +m[1] : 3); }
+function treeFill(stage) { return CONIFERS.test(stage || '') ? '#1f6b2c' : '#6cc04a'; }   // barrträd mörka, lövträd ljusa
 function treeLabel(type) { const t = D.treeTypes.find(t => t.stage === type); return t ? t.label : type; }
 
 // --- Startgård och startfält ----------------------------------------------------------------------
@@ -230,8 +230,10 @@ function draw() {
   for (const d of drawings) {
     if (d.kind !== 'träd') continue;
     const isSel = d === selDraw;
-    const m = L.circleMarker(ll(...d.points[0]), {radius: treeRadius(d), color: isSel ? '#1d6fd6' : '#0b3d0b', weight: isSel ? 3 : 1.5,
-      fillColor: '#3cb043', fillOpacity: 0.85, interactive: mode === 'trad'}).bindTooltip(treeLabel(d.type), {sticky: true}).addTo(treeLayer);
+    // samma storlek i meter som träden från bygget, med blå kant när det är valt
+    const m = L.circle(ll(...d.points[0]), {radius: genRadius(d.type), color: isSel ? '#1d6fd6' : '#0b3d0b',
+      weight: isSel ? 3 : 1.5, fillColor: treeFill(d.type), fillOpacity: 0.9, interactive: mode === 'trad'})
+      .bindTooltip(treeLabel(d.type) + ' (utsatt)', {sticky: true}).addTo(treeLayer);
     m.on('click', L.DomEvent.stop);
     m.on('mousedown', e => {
       L.DomEvent.stop(e); selDraw = d; tool = null;
@@ -277,7 +279,7 @@ function drawGenerated() {     // träden från senaste bygget: barrträd mörkg
   for (const [x, y, stage] of D.genTrees) {
     if (gone.some(a => inside([x, y], a.points))) continue;
     const c = L.circle(ll(x, y), {renderer: canvas, radius: genRadius(stage), weight: 1, color: '#0d2a10',
-      fillColor: CONIFERS.test(stage || '') ? '#1f6b2c' : '#6cc04a', fillOpacity: 0.85, interactive: mode === 'trad'})
+      fillColor: treeFill(stage), fillOpacity: 0.85, interactive: mode === 'trad'})
       .bindTooltip(treeLabel(stage) || 'träd', {sticky: true}).addTo(genLayer);
     c.on('click', L.DomEvent.stop);
     c.on('mousedown', e => {
@@ -285,8 +287,8 @@ function drawGenerated() {     // träden från senaste bygget: barrträd mörkg
       if (tool === 'tabort') { removeGenTree(x, y); return; }
       if (tool || !stage) return;
       const d = adoptGenTree(x, y, stage);                // dra direkt, eller klicka för att byta art
-      const m = L.circleMarker(ll(x, y), {radius: treeRadius(d), color: '#1d6fd6', weight: 3, fillColor: '#3cb043',
-        fillOpacity: 0.85, interactive: false}).addTo(editLayer);
+      const m = L.circle(ll(x, y), {radius: genRadius(stage), color: '#1d6fd6', weight: 3, fillColor: treeFill(stage),
+        fillOpacity: 0.9, interactive: false}).addTo(editLayer);
       drawGenerated();
       dragHandle(e.latlng, ln => { d.points[0] = xy(ln); m.setLatLng(ln); }, () => { saveDrawings(); draw(); panel(); });
     });
