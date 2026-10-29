@@ -115,6 +115,9 @@ LAWN_GRASS = ("grass", 2)    # greenSmall: kortare gräs på en egen gårdsplan
 DECO_STATES = {
     "forestPlants": ["dry branches", "clovers", "starflower", "bunchberry", "salmonBerryBush",
                      "starryFalseSolomonSeal", "swordFern", "deerFern", "grass", "riceLongGrainDeco"],
+    "waterPlants": ["typhaLatifoliaSmall", "typhaLatifoliaMedium", "typhaLatifoliaLarge", "miscanthusSinensisSmall",
+                    "miscanthusSinensisMedium", "miscanthusSinensisLarge", "stipaTenuissimaSmall",
+                    "stipaTenuissimaLarge"],
     "decoFoliage": ["smallDenseMix", "smallRumex", "apera", "whiteTallWeed", "greenTallWeed", "cirsium",
                     "papaverRhoeas", "rumex", "grassSmall", "grassMedium", "grassCut", "coneflower",
                     "slenderMountainMint", "wildBergamot", "prairieBlazingStar"],
@@ -126,6 +129,17 @@ FOREST_FLOOR = [("dry branches", 3), ("starflower", 2), ("bunchberry", 2), ("dee
 VERGE = [("grassMedium", 6), ("smallDenseMix", 2), ("apera", 2), ("rumex", 1), ("cirsium", 1),
          ("papaverRhoeas", 1), ("whiteTallWeed", 1), ("greenTallWeed", 1)]   # vägrenar: gräs, ven, syra, tistel, vallmo
 VERGE_WIDTH = 4.0            # m vägren med örter utanför vägkanten
+REEDS = [("typhaLatifoliaSmall", 2), ("typhaLatifoliaMedium", 3), ("typhaLatifoliaLarge", 2), (None, 3)]   # kaveldun
+REED_WIDTH = 3.0             # m kaveldun längs diken, åar och stränder
+# Buskar i decoBush (eget lager, densityMap_groundFoliage, värdet = tillståndet i GIANTS Editors lista).
+BUSH_STATES = ["Small", "Medium", "Big", "Super Big", "Blueberry Short", "Blueberry Small", "Blueberry Medium",
+               "Blueberry Big", "Blueberry Tall", "Boxwood Small", "Boxwood Medium", "Boxwood Big",
+               "Hazelnut Small", "Hazelnut Medium", "Hazelnut Big"]
+BLUEBERRY = [("Blueberry Short", 3), ("Blueberry Small", 3), ("Blueberry Medium", 2), ("Blueberry Big", 1),
+             ("Blueberry Tall", 1), (None, 6)]           # blåbärsris i barrskogen
+EDGE_BUSHES = [("Small", 2), ("Medium", 2), ("Big", 1), ("Hazelnut Small", 2), ("Hazelnut Medium", 2),
+               ("Hazelnut Big", 1), (None, 4)]           # buskar och hassel i skogskanterna
+BUSH_EDGE = 8.0              # m in från skogskanten
 PATCH = 6.0                  # m: växterna står i fläckar av ungefär den här storleken
 VEHICLE_CLEAR = 8.0          # m utan träd runt startgårdens maskiner
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
@@ -487,7 +501,8 @@ def build(project, args):
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
     paint_vegetation(data_dir / "densityMap_fruits.gdm", fields, labels, [farm.box] if own_yard else [], roads,
-                     world, N)
+                     world, N, osm[2], [g for c, g in areas if c == "water"])
+    paint_bushes(data_dir / "densityMap_groundFoliage.gdm", areas, world, N)
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
     farm_arr = paint_farmlands(fields, properties, lone_id, farm.box, world, cfg.il_res["farmland"])
     if not properties:
@@ -905,22 +920,37 @@ def fruit_value(layer, state):
 
 
 def patches(shape, res, world, mix, layer, seed):
-    """Växter i fläckar (PATCH m) efter vikterna i mix, som värden i densityMap_fruits (0 = bar mark)."""
+    """Växter i fläckar (PATCH m) efter vikterna i mix, som värden i densityMap_fruits (0 = bar mark).
+    layer "decoBush" ger värdena för buskarnas eget lager."""
     rng = np.random.default_rng(seed)
     cell = max(1, int(round(PATCH * res / world.size)))
     n = -(-shape[0] // cell)
     weights = np.array([w for _, w in mix], float)
     pick = rng.choice(len(mix), (n, n), p=weights / weights.sum())
-    lut = np.array([fruit_value(layer, st) if st else 0 for st, _ in mix], np.uint16)
+    value = (lambda st: BUSH_STATES.index(st) + 1) if layer == "decoBush" else (lambda st: fruit_value(layer, st))
+    lut = np.array([value(st) if st else 0 for st, _ in mix], np.uint16)
     out = np.repeat(np.repeat(lut[pick], cell, axis=0), cell, axis=1)[:shape[0], :shape[1]]
     out[rng.integers(0, 100, shape, dtype=np.uint8) < 15] = 0   # glesare i fläckarna
     return out
 
 
-def paint_vegetation(path, fields, labels, lawns, roads, world, res):
+def paint_bushes(path, areas, world, res):
+    """Buskar i densityMap_groundFoliage: blåbärsris i barrskogen, buskar och hassel i skogskanterna."""
+    sq = world.square(-50)
+    conifer = [g for c, g in areas if c == "barrskog" and g.intersects(sq)]
+    forests = [g for c, g in areas if c in landcover.FORESTS and g.intersects(sq)]
+    bush = np.zeros((res, res), np.uint16)
+    inside = mask_of(conifer, world, res)
+    bush[inside] = patches(bush.shape, res, world, BLUEBERRY, "decoBush", 31)[inside]
+    edge = mask_of(forests, world, res) & ~mask_of([g.buffer(-BUSH_EDGE) for g in forests], world, res)
+    bush[edge] = patches(bush.shape, res, world, EDGE_BUSHES, "decoBush", 32)[edge]
+    binfmt.paint_gdm(str(path), res, bush, 4, 1, 0)
+
+
+def paint_vegetation(path, fields, labels, lawns, roads, world, res, waterways=(), water=()):
     """Växtligheten i densityMap_fruits: grödor på fälten (skördeklara, som fields.xml), gräs på öppen
-    mark, örter och blommor på vägrenarna, skogsväxter och ris i skogen och kortare gräs på
-    gårdsplanens gräsytor."""
+    mark, örter och blommor på vägrenarna, kaveldun längs vattnet, skogsväxter och ris i skogen och
+    kortare gräs på gårdsplanens gräsytor."""
     veg = np.zeros((res, res), np.uint16)
     f = res // labels.shape[0]
 
@@ -934,6 +964,10 @@ def paint_vegetation(path, fields, labels, lawns, roads, world, res):
     veg[verge] = patches(veg.shape, res, world, VERGE, "decoFoliage", 21)[verge]
     forest = ground("forestLeaves01")
     veg[forest] = patches(veg.shape, res, world, FOREST_FLOOR, "forestPlants", 22)[forest]
+    shore = [ln.buffer(REED_WIDTH) for _, ln in waterways if ln.intersects(sq)]
+    shore += [g.boundary.buffer(REED_WIDTH) for g in water if g.intersects(sq)]
+    reeds = (grass | forest) & mask_of(shore, world, res)
+    veg[reeds] = patches(veg.shape, res, world, REEDS, "waterPlants", 23)[reeds]
     veg[grass & mask_of(lawns, world, res)] = fruit_value(*LAWN_GRASS)
     crops = [c for c in CROP_STATE]
     img = Image.new("L", (res, res), 0)
