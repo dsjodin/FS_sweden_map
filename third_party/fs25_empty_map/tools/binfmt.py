@@ -72,8 +72,14 @@ def _enc_gdm_record(rv, width):
     lut = {int(v): i for i, v in enumerate(palette)}
     index = np.array([lut[int(v)] for v in flat], dtype=np.uint8)
     out = bytes((nplanes, pc)) + b"".join(struct.pack("<H", int(v)) for v in palette)
+    # The index bits are PACKED per pixel (pixel k = bits 2k (low) and 2k+1 (high), LSB-first bytes), not stored
+    # as separate bit-planes: verified against chunks GIANTS Editor itself wrote into a saved densityMap_fruits.gdm
+    # (FS_sweden_map, 2026-10). Separate planes only differ when a block holds 3-4 values (nplanes = 2), so blocks
+    # with one or two values (most fields) looked right while field edges and verges were scrambled in the game.
+    bits = np.zeros(1024 * nplanes, np.uint8)
     for b in range(nplanes):
-        out += np.packbits((index >> b) & 1, bitorder="little").tobytes()
+        bits[b::nplanes] = (index >> b) & 1
+    out += np.packbits(bits, bitorder="little").tobytes()
     return out
 
 
