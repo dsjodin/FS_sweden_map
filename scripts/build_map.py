@@ -111,6 +111,22 @@ CROP_STATE = {"WHEAT": ("wheat", 8), "BARLEY": ("barley", 8), "OAT": ("oat", 5),
               "GRASS": ("grass", 4)}
 OPEN_GRASS = ("grass", 3)    # greenMiddle: gräs på öppen mark (marklagret grass01 utanför fälten)
 LAWN_GRASS = ("grass", 2)    # greenSmall: kortare gräs på en egen gårdsplan
+# Tillstånden i fruits-lagrets dekorationslager, i ordningen i GIANTS Editors lista (räknas från 1).
+DECO_STATES = {
+    "forestPlants": ["dry branches", "clovers", "starflower", "bunchberry", "salmonBerryBush",
+                     "starryFalseSolomonSeal", "swordFern", "deerFern", "grass", "riceLongGrainDeco"],
+    "decoFoliage": ["smallDenseMix", "smallRumex", "apera", "whiteTallWeed", "greenTallWeed", "cirsium",
+                    "papaverRhoeas", "rumex", "grassSmall", "grassMedium", "grassCut", "coneflower",
+                    "slenderMountainMint", "wildBergamot", "prairieBlazingStar"],
+}
+# Blandningar (tillstånd, vikt) som passar svensk natur; None = bar mark. De amerikanska präriearterna
+# och laxbärsbusken används inte.
+FOREST_FLOOR = [("dry branches", 3), ("starflower", 2), ("bunchberry", 2), ("deerFern", 3), ("swordFern", 1),
+                ("clovers", 1), ("grass", 2), (None, 4)]     # skogsstjärna, hönsbär, ormbunkar, ris
+VERGE = [("grassMedium", 6), ("smallDenseMix", 2), ("apera", 2), ("rumex", 1), ("cirsium", 1),
+         ("papaverRhoeas", 1), ("whiteTallWeed", 1), ("greenTallWeed", 1)]   # vägrenar: gräs, ven, syra, tistel, vallmo
+VERGE_WIDTH = 4.0            # m vägren med örter utanför vägkanten
+PATCH = 6.0                  # m: växterna står i fläckar av ungefär den här storleken
 VEHICLE_CLEAR = 8.0          # m utan träd runt startgårdens maskiner
 FIELD_SHRINK = 1.5           # m, ger renar mellan skiften
 FIELD_EDGE = 5               # m, fält hålls så här långt från kartkanten
@@ -470,7 +486,8 @@ def build(project, args):
     for geom, _block, _ in fields:
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
     binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
-    paint_vegetation(data_dir / "densityMap_fruits.gdm", fields, labels, [farm.box] if own_yard else [], world, N)
+    paint_vegetation(data_dir / "densityMap_fruits.gdm", fields, labels, [farm.box] if own_yard else [], roads,
+                     world, N)
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
     farm_arr = paint_farmlands(fields, properties, lone_id, farm.box, world, cfg.il_res["farmland"])
     if not properties:
@@ -879,19 +896,44 @@ def load_placements(project):
 
 
 def fruit_value(layer, state):
-    """Värdet i densityMap_fruits för ett växtlager och tillstånd (se CROP_STATE)."""
+    """Värdet i densityMap_fruits för ett växtlager och tillstånd (nummer, eller namn ur DECO_STATES)."""
     names = [t["name"] for L in gen_i3d.FOLIAGE["layers"] if L["attrs"].get("numTypeIndexChannels") == "5"
              for t in L["types"]]
+    if isinstance(state, str):
+        state = DECO_STATES[layer].index(state) + 1
     return (names.index(layer) + 1) | (state << 5)
 
 
-def paint_vegetation(path, fields, labels, lawns, world, res):
-    """Grödor på fälten (skördeklara, som fields.xml), gräs på öppen mark och kortare gräs på
-    gårdsplanens gräsytor, i densityMap_fruits."""
+def patches(shape, res, world, mix, layer, seed):
+    """Växter i fläckar (PATCH m) efter vikterna i mix, som värden i densityMap_fruits (0 = bar mark)."""
+    rng = np.random.default_rng(seed)
+    cell = max(1, int(round(PATCH * res / world.size)))
+    n = -(-shape[0] // cell)
+    weights = np.array([w for _, w in mix], float)
+    pick = rng.choice(len(mix), (n, n), p=weights / weights.sum())
+    lut = np.array([fruit_value(layer, st) if st else 0 for st, _ in mix], np.uint16)
+    out = np.repeat(np.repeat(lut[pick], cell, axis=0), cell, axis=1)[:shape[0], :shape[1]]
+    out[rng.integers(0, 100, shape, dtype=np.uint8) < 15] = 0   # glesare i fläckarna
+    return out
+
+
+def paint_vegetation(path, fields, labels, lawns, roads, world, res):
+    """Växtligheten i densityMap_fruits: grödor på fälten (skördeklara, som fields.xml), gräs på öppen
+    mark, örter och blommor på vägrenarna, skogsväxter och ris i skogen och kortare gräs på
+    gårdsplanens gräsytor."""
     veg = np.zeros((res, res), np.uint16)
     f = res // labels.shape[0]
-    grass = np.repeat(np.repeat(labels == GROUND_NAMES.index("grass01"), f, axis=0), f, axis=1)
+
+    def ground(name):
+        return np.repeat(np.repeat(labels == GROUND_NAMES.index(name), f, axis=0), f, axis=1)
+    grass = ground("grass01")
     veg[grass] = fruit_value(*OPEN_GRASS)
+    sq = world.square(-50)
+    verge = grass & mask_of([line.buffer(ROAD_STYLE[cls][1] / 2 + VERGE_WIDTH) for cls, line in roads
+                             if line.intersects(sq)], world, res)
+    veg[verge] = patches(veg.shape, res, world, VERGE, "decoFoliage", 21)[verge]
+    forest = ground("forestLeaves01")
+    veg[forest] = patches(veg.shape, res, world, FOREST_FLOOR, "forestPlants", 22)[forest]
     veg[grass & mask_of(lawns, world, res)] = fruit_value(*LAWN_GRASS)
     crops = [c for c in CROP_STATE]
     img = Image.new("L", (res, res), 0)
