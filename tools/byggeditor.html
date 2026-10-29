@@ -382,7 +382,9 @@ function panelStart() {
       <button data-g="1">↻ 1°</button><button data-g="15">↻ 15°</button></div>
       <div class="row"><label><input type="checkbox" id="gb" ${start.byggnader ? 'checked' : ''}>
       spelets gårdshus, maskinhall och silo på gårdsplanen</label></div>
-      <p class="muted">Den gula rutan är gårdsplanen: marken planas, blir grus och är din från start. Dra den för att flytta,
+      ${start.byggnader ? '' : `<div class="row"><label><input type="checkbox" id="gp" ${start.plana ? 'checked' : ''}>
+      plana hela gårdsplanen</label></div>`}
+      <p class="muted">Den gula rutan är gårdsplanen: ${start.plana || start.byggnader ? 'marken planas och ' : 'terrängen behåller sina verkliga höjder (bara marken under varje byggnad planas), '}den är din från start. Dra den för att flytta,
       <kbd>Q</kbd>/<kbd>E</kbd> vrider (med <kbd>Shift</kbd> 15°). ${start.byggnader ? '' :
       'Utan spelets byggnader: sätt ut egna under Byggnader → Placera fritt. Ta med ett bostadshus, annars finns ingen säng att sova i.'}</p>`;
   } else {
@@ -451,6 +453,7 @@ function panel() {
   for (const [id, key] of [['gw', 'bredd'], ['gl', 'langd']])
     on(id, 'onchange', e => { const v = parseFloat(e.target.value); if (v >= 10) { start[key] = v; saveStart(); draw(); } });
   on('gb', 'onchange', e => { start.byggnader = e.target.checked; saveStart(); panel(); });
+  on('gp', 'onchange', e => { start.plana = e.target.checked; saveStart(); panel(); });
   on('cf', 'onclick', () => { start.falt = []; saveStart(); draw(); panel(); });
   document.getElementById('build').onclick = startBuild;
 }
@@ -546,7 +549,7 @@ fetch('api/data').then(r => r.json()).then(d => {
   D.genTrees = d.genTrees || []; D.treeTypes = d.treeTypes || []; D.fields = d.fields || []; D.farmSize = d.farmSize || 100;
   const s0 = d.start || {};
   start = {gard: s0.gard || null, falt: s0.falt || [], bredd: s0.bredd || D.farmSize, langd: s0.langd || D.farmSize,
-           vridning: s0.vridning || 0, byggnader: s0.byggnader !== false};
+           vridning: s0.vridning || 0, byggnader: s0.byggnader !== false, plana: s0.plana !== false};
   D.catalog.forEach(c => { if (c.thumb) c.thumb = 'img/' + c.thumb.split('/').pop(); });
   const bases = {};
   for (const bg of D.backgrounds) bases[bg.name] = L.imageOverlay(bg.file, [[-bg.half, -bg.half], [bg.half, bg.half]]);

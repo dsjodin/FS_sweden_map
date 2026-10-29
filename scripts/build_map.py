@@ -357,7 +357,12 @@ def build(project, args):
     sites = [farm] + ([mill] if mill else [])
     edited = load_editor_buildings(project, world)          # byggeditor.py: [(Site, placeable)]
     sites += [site for site, _ in edited]
-    obj.flatten(game, world, sites)
+    # En egen gårdsplan utan spelets byggnader kan behålla terrängens verkliga höjder (Start-läget,
+    # "plana gårdsplanen" avbockad): då planas bara marken under varje byggnad.
+    keep_terrain = bool(chosen["gard"]) and not chosen["byggnader"] and not chosen["plana"]
+    obj.flatten(game, world, [s_ for s_ in sites if not (keep_terrain and s_ is farm)])
+    if keep_terrain:
+        farm.height = float(height_sampler(game, world)(farm.e, farm.n))
     water_meshes = water.build_water(game, world, areas, osm[2],   # sänker terrängen under vattnet
                                      [(ROAD_STYLE[c][1], ln) for c, ln in roads])
     if game.max() > gen_i3d.HEIGHT_SCALE or game.min() < 0:
@@ -602,7 +607,7 @@ def add_fields_to_i3d(i3d_path, fields, world, height_at, start_pt, trees, farm,
                             ("polygonIndex", "string", "0"), ("teleportIndicatorIndex", "string", "1")):
             sub(fua, "Attribute", name=nm, type=ty, value=val)
     obj.add_trees(root, trees, world, height_at, nid)
-    obj.add_store_spawn(root, farm, world, nid)
+    obj.add_store_spawn(root, farm, world, nid, height_at)
     files_cache = {}
     water.add_to_i3d(root, water_meshes, world, nid, lambda f: obj.add_file(root, f, files_cache))
     ET.indent(root, space="  ")
@@ -720,7 +725,7 @@ def load_start(project, world):
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     return {"gard": data.get("gard"), "bredd": float(data.get("bredd") or obj.FARM_SIZE),
             "langd": float(data.get("langd") or obj.FARM_SIZE), "vridning": float(data.get("vridning") or 0),
-            "byggnader": data.get("byggnader", True),
+            "byggnader": data.get("byggnader", True), "plana": data.get("plana", True),
             "falt": [Point(world.e0 + x, world.n0 + y) for x, y in data.get("falt", [])]}
 
 

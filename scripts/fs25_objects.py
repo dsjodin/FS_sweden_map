@@ -312,15 +312,17 @@ def add_trees(root, trees, world, height_at, nid, seed=11):
             "nodeId": nid()})
 
 
-def add_store_spawn(root, farm, world, nid):
+def add_store_spawn(root, farm, world, nid, height_at=None):
     """Plats där köpta fordon dyker upp: en 40 m lång linje i gårdens östra del (vriden med gården).
     På en mindre gårdsplan än 100 m hamnar den närmare mitten."""
     scene = root.find("Scene")
     uas = root.find("UserAttributes")
-    x, z = world.xz(*farm.at(min(38, farm.width / 2 - 6), min(20, farm.length / 2 - 2)))
+    e, n = farm.at(min(38, farm.width / 2 - 6), min(20, farm.length / 2 - 2))
+    x, z = world.xz(e, n)
+    y = height_at(e, n) if height_at else farm.height          # gårdsplanen är inte alltid planad
     start_id = nid()
     start = ET.SubElement(scene, "TransformGroup", {"name": "storeSpawnPlace1Start",
-                                                    "translation": f"{x:.1f} {farm.height:.2f} {z:.1f}",
+                                                    "translation": f"{x:.1f} {y:.2f} {z:.1f}",
                                                     "rotation": f"0 {farm.rot:g} 0", "nodeId": start_id})
     ET.SubElement(start, "TransformGroup", {"name": "storeSpawnPlace1End", "translation": "0 0 40", "nodeId": nid()})
     ua = ET.SubElement(uas, "UserAttribute", {"nodeId": start_id})
