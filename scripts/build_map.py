@@ -499,10 +499,13 @@ def build(project, args):
     dg = ImageDraw.Draw(ground)
     for geom, _block, _ in fields:
         draw_polygon(dg, geom.buffer(-1), world, N, GROUND_CULTIVATED)        # arbetsyta 1 m in från kanten
-    binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, np.array(ground, dtype=np.uint16), 11, 1, 0)
+    on_road = road_mask(roads, world, N)                    # inget fält och ingen växtlighet på vägarna
+    ground_arr = np.array(ground, dtype=np.uint16)
+    ground_arr[on_road] = 0
+    binfmt.paint_gdm(str(data_dir / "densityMap_ground.gdm"), N, ground_arr, 11, 1, 0)
     paint_vegetation(data_dir / "densityMap_fruits.gdm", fields, labels, [farm.box] if own_yard else [], roads,
-                     world, N, osm[2], [g for c, g in areas if c == "water"])
-    paint_bushes(data_dir / "densityMap_groundFoliage.gdm", areas, world, N)
+                     world, N, osm[2], [g for c, g in areas if c == "water"], on_road)
+    paint_bushes(data_dir / "densityMap_groundFoliage.gdm", areas, world, N, on_road)
     no_build = no_build_mask(osm, world, cfg.il_res["placementCollision"])
     farm_arr = paint_farmlands(fields, properties, lone_id, farm.box, world, cfg.il_res["farmland"])
     if not properties:
@@ -934,7 +937,14 @@ def patches(shape, res, world, mix, layer, seed):
     return out
 
 
-def paint_bushes(path, areas, world, res):
+def road_mask(roads, world, res, margin=0.5):
+    """Vägbanorna (med margin m extra på var sida) som rutnät i res × res."""
+    sq = world.square(-50)
+    return mask_of([line.buffer(ROAD_STYLE[cls][1] / 2 + margin) for cls, line in roads if line.intersects(sq)],
+                   world, res)
+
+
+def paint_bushes(path, areas, world, res, on_road=None):
     """Buskar i densityMap_groundFoliage: blåbärsris i barrskogen, buskar och hassel i skogskanterna."""
     sq = world.square(-50)
     conifer = [g for c, g in areas if c == "barrskog" and g.intersects(sq)]
@@ -944,10 +954,12 @@ def paint_bushes(path, areas, world, res):
     bush[inside] = patches(bush.shape, res, world, BLUEBERRY, "decoBush", 31)[inside]
     edge = mask_of(forests, world, res) & ~mask_of([g.buffer(-BUSH_EDGE) for g in forests], world, res)
     bush[edge] = patches(bush.shape, res, world, EDGE_BUSHES, "decoBush", 32)[edge]
+    if on_road is not None:
+        bush[on_road] = 0
     binfmt.paint_gdm(str(path), res, bush, 4, 1, 0)
 
 
-def paint_vegetation(path, fields, labels, lawns, roads, world, res, waterways=(), water=()):
+def paint_vegetation(path, fields, labels, lawns, roads, world, res, waterways=(), water=(), on_road=None):
     """Växtligheten i densityMap_fruits: grödor på fälten (skördeklara, som fields.xml), gräs på öppen
     mark, örter och blommor på vägrenarna, kaveldun längs vattnet, skogsväxter och ris i skogen och
     kortare gräs på gårdsplanens gräsytor."""
@@ -979,6 +991,8 @@ def paint_vegetation(path, fields, labels, lawns, roads, world, res, waterways=(
     veg[codes > 0] = 0                                      # fält utan känd gröda: plöjda, ingen växtlighet
     for k, fruit in enumerate(crops, 1):
         veg[codes == k] = fruit_value(*CROP_STATE[fruit])
+    if on_road is not None:
+        veg[on_road] = 0
     binfmt.paint_gdm(str(path), res, veg, 10, 2, 5, range_splits=(5,))
 
 
