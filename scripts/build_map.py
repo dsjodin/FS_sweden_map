@@ -937,6 +937,27 @@ def patches(shape, res, world, mix, layer, seed):
     return out
 
 
+def limit_palette(arr, keep=(), max_values=4, chunk=32):
+    """Density-filerna (.gdm) lagras i rutor om 32 × 32 pixlar som rymmer högst max_values olika värden
+    (maxBpp 2 i binfmt.paint_gdm; fler blandas ihop och ger t.ex. säd på gräset i fältkanterna). I rutor
+    med fler värden behålls de i keep (grödorna) och de vanligaste, övriga ersätts med det vanligaste
+    värdet som inte är i keep. Ändrar arr på plats."""
+    n = arr.shape[0] // chunk
+    blocks = arr.reshape(n, chunk, n, chunk).swapaxes(1, 2).reshape(n * n, chunk * chunk)
+    srt = np.sort(blocks, axis=1)
+    bad = np.nonzero((np.diff(srt, axis=1) != 0).sum(axis=1) + 1 > max_values)[0]
+    keep = set(int(k) for k in keep)
+    for i in bad:
+        block = blocks[i]
+        vals, counts = np.unique(block, return_counts=True)
+        order = sorted(range(len(vals)), key=lambda k: (int(vals[k]) in keep, counts[k]), reverse=True)
+        top = vals[order[:max_values]]
+        target = next((t for t in top if int(t) not in keep), top[0])
+        block[~np.isin(block, top)] = target
+    arr[:] = blocks.reshape(n, n, chunk, chunk).swapaxes(1, 2).reshape(arr.shape)
+    return len(bad)
+
+
 def road_mask(roads, world, res, margin=0.5):
     """Vägbanorna (med margin m extra på var sida) som rutnät i res × res."""
     sq = world.square(-50)
@@ -956,6 +977,7 @@ def paint_bushes(path, areas, world, res, on_road=None):
     bush[edge] = patches(bush.shape, res, world, EDGE_BUSHES, "decoBush", 32)[edge]
     if on_road is not None:
         bush[on_road] = 0
+    limit_palette(bush)
     binfmt.paint_gdm(str(path), res, bush, 4, 1, 0)
 
 
@@ -993,6 +1015,7 @@ def paint_vegetation(path, fields, labels, lawns, roads, world, res, waterways=(
         veg[codes == k] = fruit_value(*CROP_STATE[fruit])
     if on_road is not None:
         veg[on_road] = 0
+    limit_palette(veg, keep=[fruit_value(*CROP_STATE[c]) for c in CROP_STATE])
     binfmt.paint_gdm(str(path), res, veg, 10, 2, 5, range_splits=(5,))
 
 
