@@ -105,9 +105,10 @@ YARD_APRON = 4.0             # m grus runt byggnader från byggeditorn
 # Växtlighet målad i densityMap_fruits. Värdet är lagrets nummer i fruits-lagret (1 = decoFoliage, i
 # ordningen i base_foliage.json) plus tillståndet × 32; tillstånden räknas från 1 i foliage-filens
 # ordning. Avläst och bekräftat i GIANTS Editor (Foliage-panelen): gräs harvestReady = 6 + 4 × 32 = 134,
-# vete harvestReady = 7 + 8 × 32 = 263, harvested = 10, dead = 9.
-CROP_STATE = {"WHEAT": ("wheat", 8), "BARLEY": ("barley", 7), "OAT": ("oat", 5), "CANOLA": ("canola", 9),
-              "GRASS": ("grass", 4)}      # skördeklart, ur foliage-filerna ("0 0 0 1 - harvest ready" = 8)
+# vete harvestReady = 7 + 8 × 32 = 263, harvested = 10, dead = 9. Skördeklart tillstånd per gröda, alla
+# avlästa i GIANTS Editor (kommentaren i barley.xml, "1 1 1 0 - harvest ready", stämmer inte: det är 8).
+CROP_STATE = {"WHEAT": ("wheat", 8), "BARLEY": ("barley", 8), "OAT": ("oat", 5), "CANOLA": ("canola", 9),
+              "GRASS": ("grass", 4)}
 OPEN_GRASS = ("grass", 3)    # greenMiddle: gräs på öppen mark (marklagret grass01 utanför fälten)
 LAWN_GRASS = ("grass", 2)    # greenSmall: kortare gräs på en egen gårdsplan
 VEHICLE_CLEAR = 8.0          # m utan träd runt startgårdens maskiner
