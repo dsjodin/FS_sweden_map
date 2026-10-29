@@ -498,6 +498,7 @@ def build(project, args):
     Image.fromarray(dem).save(data_dir / "map_dem.png")
     for i, (name, _) in enumerate(GROUND):
         Image.fromarray(np.where(labels == i, 255, 0).astype(np.uint8)).save(data_dir / f"{name}_weight.png")
+    save_ground_image(project.build / "marklager.png", labels, [g for c, g in areas if c == "water"], world)
 
     N = cfg.density_res
     ground = Image.new("L", (N, N), 0)
@@ -787,6 +788,26 @@ def save_fields_for_editor(path, fields, world, n_start):
          "start": i <= n_start,
          "poly": [[round(x - world.e0, 1), round(y - world.n0, 1)] for x, y in geom.simplify(1).exterior.coords]}
         for i, (geom, _block, code) in enumerate(fields, 1)]), encoding="utf-8")
+
+
+EDITOR_COLORS = {   # tydliga färger för byggeditorns marklager-bakgrund
+    "grass01": (150, 205, 110), "forestLeaves01": (40, 105, 45), "gravelSmall01": (235, 180, 100),
+    "mudDark01": (150, 105, 60), "gravel01": (215, 210, 190), "asphalt01": (60, 62, 68)}
+
+
+def save_ground_image(path, labels, water, world):
+    """Marklagren som tydlig bild för byggeditorn (build/<namn>/marklager.png, 1 pixel per meter):
+    en klar färg per marktyp, vatten blått och mörka kanter mellan olika marktyper."""
+    palette = np.array([EDITOR_COLORS[name] for name in GROUND_NAMES], np.uint8)
+    img = palette[labels]
+    lab = labels.astype(np.int16)
+    lab[mask_of(water, world, labels.shape[0])] = -1
+    img[lab == -1] = (70, 130, 220)
+    edge = np.zeros(labels.shape, bool)
+    edge[1:, :] |= lab[1:, :] != lab[:-1, :]
+    edge[:, 1:] |= lab[:, 1:] != lab[:, :-1]
+    img[edge] = (img[edge] * 0.45).astype(np.uint8)
+    Image.fromarray(img).save(path)
 
 
 def save_farmland_image(path, farm):

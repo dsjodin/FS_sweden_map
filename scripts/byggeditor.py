@@ -103,6 +103,8 @@ def prepare(project, world, out):
     overview = project.build / mod_name / "maps" / "overview.png"
     if overview.exists():
         backgrounds.append({"name": "Spelets kartbild", "file": "bg/overview.png", "half": world.size})
+    if (project.build / "marklager.png").exists():              # build_map.py: marktyperna med tydliga kanter
+        backgrounds.append({"name": "Marklager", "file": "bg/marklager.png", "half": world.half})
     catalog = json.loads((CATALOG / "katalog.json").read_text(encoding="utf-8")) if (CATALOG / "katalog.json").exists() else []
     for c in catalog:              # mått saknas i XML-filen: anta 10 × 10 m, kan ändras i editorn
         c["guess"] = not (c.get("width") and c.get("length"))
@@ -156,7 +158,8 @@ def main():
 
     files = {"/": (TEMPLATE, "text/html; charset=utf-8"),
              "/bg/ortofoto.jpg": (out / "ortofoto.jpg", "image/jpeg"),
-             "/bg/overview.png": (overview, "image/png")}
+             "/bg/overview.png": (overview, "image/png"),
+             "/bg/marklager.png": (project.build / "marklager.png", "image/png")}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):

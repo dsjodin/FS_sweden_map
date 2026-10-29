@@ -44,7 +44,7 @@ let tool = null, current = null, selDraw = null;            // Måla mark: verkt
 let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null, showGen = false;
 let start = {gard: null, falt: []};   // Start-läget: gårdens mitt, bredd, längd, vridning, byggnader och en punkt per startfält
 let freeItem = null;
-let overviewLayer = null;             // spelets kartbild, laddas om efter varje bygge                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
+let overviewLayer = null, groundLayer = null;   // spelets kartbild och marklagren, laddas om efter varje bygge                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
                     'skog': '#2e7d32', 'sudda vägar': '#e53935', 'inga träd': '#ff9800'};
@@ -496,6 +496,7 @@ async function startBuild() {
     else fetch('api/data').then(r => r.json()).then(d => {
       D.genTrees = d.genTrees; D.fields = d.fields || []; drawGenerated(); draw(); panel();
       if (overviewLayer) overviewLayer.setUrl('bg/overview.png?v=' + Date.now());   // nya kartbilden
+      if (groundLayer) groundLayer.setUrl('bg/marklager.png?v=' + Date.now());
     });
   };
   setTimeout(poll, 800);
@@ -563,13 +564,15 @@ fetch('api/data').then(r => r.json()).then(d => {
   map.createPane('stod').style.zIndex = 260;
   const bounds = bg => [[-bg.half, -bg.half], [bg.half, bg.half]];
   const ov = D.backgrounds.find(b => b.file.includes('overview')), ortho = D.backgrounds.find(b => b.file.includes('ortofoto'));
+  const ml = D.backgrounds.find(b => b.file.includes('marklager'));
   const bases = {};
+  if (ml) bases['Marklager (tydliga kanter)'] = groundLayer = L.imageOverlay(ml.file + '?v=' + Date.now(), bounds(ml), {pane: 'bakgrund'});
   if (ov) bases['Spelets karta'] = overviewLayer = L.imageOverlay(ov.file + '?v=' + Date.now(), bounds(ov), {pane: 'bakgrund'});
   if (ortho) bases['Ortofoto'] = L.imageOverlay(ortho.file, bounds(ortho), {pane: 'bakgrund'});
   bases['Ingen bakgrund'] = L.layerGroup();
   Object.values(bases)[0].addTo(map);
   const overlays = {};
-  if (ortho && ov) {
+  if (ortho && (ov || ml)) {
     let op = 0.4;
     try { op = parseFloat(localStorage.getItem('byggeditor.ortoop') || '0.4'); } catch (e) {}
     const orthoOver = L.imageOverlay(ortho.file, bounds(ortho), {pane: 'stod', opacity: op});
