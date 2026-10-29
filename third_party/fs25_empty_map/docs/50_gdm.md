@@ -18,7 +18,9 @@ Header (16 bytes):
   [14],[15] = 0
 Then (mapPixels/32)^2 chunks, row-major. Each chunk holds, per compression range, one record:
   [numBitplanes u8][paletteCount u8][palette: paletteCount x u16 LE][numBitplanes x (chunkPixels^2/8) bytes]
-Pixel value = palette[index]; index read LSB-first from the bit-planes.
+Pixel value = palette[index]. With numBitplanes = 2 the index bits are PACKED per pixel: pixel k = bits 2k (low)
+and 2k+1 (high), LSB-first bytes (verified 2026-10 against blocks GIANTS Editor wrote; separate bit-planes, as
+first assumed here, scramble every block holding 3-4 values). At most 4 values per block and range (maxBpp 2).
 ```
 
 ## Blank map
