@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 from PIL import Image
 
 from area import ROOT
-from mod_katalog import FolderMod, find_image, find_mods, regex_text, translations, unwrap
+from mod_katalog import FolderMod, find_image, find_mods, first_tag, regex_text, translations, unwrap
 
 OUT = ROOT / "build" / "fordon_katalog"
 GAME_DIR = ROOT / "data" / "fordon"
@@ -54,7 +54,7 @@ class SlashZip:
 def parse_vehicle(data):
     """Uppgifterna ur en maskins XML, eller None om filen inte är en maskin som säljs i butiken."""
     text = data.decode("utf-8", "replace")
-    if not re.search(r"<vehicle\b", text[:5000]) or "<storeData" not in text:
+    if first_tag(text) != "vehicle" or "<storeData" not in text:      # rotelementet, efter kommentarer
         return None
     sd = text[text.find("<storeData"):text.find("</storeData>")]
     if re.search(r"<showInStore>\s*false", sd):
@@ -124,6 +124,10 @@ def main():
             if n:
                 print(f"  {name}: {n}")
     (OUT / "katalog.json").write_text(json.dumps(items, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    cats = {}
+    for i in items:
+        cats[i["category"] or "?"] = cats.get(i["category"] or "?", 0) + 1
+    print("Kategorier: " + ", ".join(f"{k} {v}" for k, v in sorted(cats.items())))
     print(f"{len(items)} maskiner, {sum(1 for i in items if i['width'])} med mått, "
           f"{sum(1 for i in items if i['thumb'])} med bild. Skrev {OUT.relative_to(ROOT)}/katalog.json")
     return 0

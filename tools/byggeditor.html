@@ -45,7 +45,7 @@ let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null;
 let start = {gard: null, falt: []};   // Start-läget: gårdens mitt, bredd, längd, vridning, byggnader och en punkt per startfält
 let freeItem = null;
 let dragEnded = 0;
-let VE = {flytt: {}, bort: [], nya: [], lankar: [], lossa: []}, selVeh = null, newVeh = null, vehQuery = '';   // Maskiner-läget                    // klicket som följer när man släpper efter en dragning ska inte avmarkera
+let VE = {flytt: {}, bort: [], nya: [], lankar: [], lossa: []}, selVeh = null, newVeh = null, vehQuery = '', vehCatFilter = '';   // Maskiner-läget                    // klicket som följer när man släpper efter en dragning ska inte avmarkera
 let overviewLayer = null, groundLayer = null;   // spelets kartbild och marklagren, laddas om efter varje bygge                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
@@ -256,9 +256,11 @@ function drawVehicles() {
 }
 function vehCatalogList() {
   const words = vehQuery.toLowerCase().split(/\s+/).filter(Boolean);
-  const list = D.vehicleCatalog.filter(c => words.every(w => (c.name + ' ' + (c.brand || '') + ' ' + (c.category || '') + ' '
-    + (c.mod || '')).toLowerCase().includes(w))).slice(0, 80);
-  return list.map(c => `<div class="item" data-v="${D.vehicleCatalog.indexOf(c)}">
+  const hits = D.vehicleCatalog.filter(c => (!vehCatFilter || c.category === vehCatFilter) && words.every(w =>
+    (c.name + ' ' + (c.brand || '') + ' ' + (c.category || '') + ' ' + (c.mod || '') + ' ' + c.file).toLowerCase().includes(w)));
+  const list = hits.slice(0, 300);
+  return `<p class="muted">${hits.length} av ${D.vehicleCatalog.length} maskiner${hits.length > list.length
+      ? `, visar ${list.length}: sök eller välj kategori för att se resten` : ''}.</p>` + list.map(c => `<div class="item" data-v="${D.vehicleCatalog.indexOf(c)}">
       ${c.thumb ? `<img src="fimg/${c.thumb.split('/').pop()}" loading="lazy" alt="">` : '<div class="ph"></div>'}
       <div><b>${esc(c.name)}</b>${c.brand ? ' · ' + esc(c.brand) : ''}<br>
       <span class="fit">${c.width ? c.width + ' × ' + c.length + ' m' : 'mått saknas'}</span><br>
@@ -282,7 +284,9 @@ function panelFordon() {
   }
   h += `<h2>Lägg till maskin</h2><p class="muted">${tool === 'nyfordon' && newVeh ? `Klicka i kartan där <b>${esc(newVeh.name)}</b>
     ska stå (<kbd>Esc</kbd> avbryter).` : 'Välj en maskin och klicka i kartan. Nya maskiner är ett test: säg till hur de ser ut i spelet.'}</p>
-    <input type="search" id="vq" placeholder="Sök maskin, märke eller kategori …" value="${esc(vehQuery)}">
+    <select id="vc" style="width:100%;margin-bottom:6px"><option value="">Alla kategorier</option>${[...new Set(D.vehicleCatalog
+      .map(c => c.category || ''))].filter(Boolean).sort().map(k => `<option ${k === vehCatFilter ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>
+    <input type="search" id="vq" placeholder="Sök maskin, märke, kategori eller fil …" value="${esc(vehQuery)}">
     <div id="vlist">${vehCatalogList()}</div>`;
   if (VE.bort.length) h += `<p class="muted">${VE.bort.length} borttagna maskiner. <button id="vundo">Ångra borttagningar</button></p>`;
   if (Object.keys(VE.flytt).length || VE.lankar.length || VE.lossa.length)
@@ -645,6 +649,7 @@ function panel() {
   const bindVeh = () => side.querySelectorAll('[data-v]').forEach(el => el.onclick = () => {
     newVeh = D.vehicleCatalog[+el.dataset.v]; tool = 'nyfordon'; panel();
   });
+  on('vc', 'onchange', e => { vehCatFilter = e.target.value; document.getElementById('vlist').innerHTML = vehCatalogList(); bindVeh(); });
   on('vq', 'oninput', e => { vehQuery = e.target.value; document.getElementById('vlist').innerHTML = vehCatalogList(); bindVeh(); });
   bindVeh();
   // Start
