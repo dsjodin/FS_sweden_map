@@ -133,8 +133,8 @@ def main():
     print(f"{len(found)} moddar i {mods.relative_to(ROOT)}, {len(without)} utan maskiner (byggnader med mera): "
           + ", ".join(sorted(without)))
     import fordon                                    # moddar som startmaskinerna kräver men som saknas här
-    used = {v["file"].split("/")[0].replace("$moddir$", "") for v in fordon.read(ROOT / "maps" / "tysslinge" / "fordon.xml")
-            if v["file"].startswith("$moddir$")} if (ROOT / "maps" / "tysslinge" / "fordon.xml").exists() else set()
+    used = {v["file"].split("/")[0].replace("$moddir$", "") for f in (ROOT / "maps").glob("*/fordon.xml")
+            for v in fordon.read(f) if v["file"].startswith("$moddir$")}
     if used - found:
         print("Moddar i startmaskinerna som saknas i data/mods: " + ", ".join(sorted(used - found)))
     (OUT / "katalog.json").write_text(json.dumps(items, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
