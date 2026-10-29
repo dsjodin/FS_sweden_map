@@ -285,6 +285,9 @@ function panelFordon() {
     <input type="search" id="vq" placeholder="Sök maskin, märke eller kategori …" value="${esc(vehQuery)}">
     <div id="vlist">${vehCatalogList()}</div>`;
   if (VE.bort.length) h += `<p class="muted">${VE.bort.length} borttagna maskiner. <button id="vundo">Ångra borttagningar</button></p>`;
+  if (Object.keys(VE.flytt).length || VE.lankar.length || VE.lossa.length)
+    h += `<p class="muted">Alla maskiner tillbaka där de stod i sparfilen, och kopplingarna som när de lästes in:
+      <button id="vresetall">Återställ alla flyttar</button></p>`;
   return h;
 }
 
@@ -635,6 +638,10 @@ function panel() {
   on('vdel', 'onclick', removeVeh);
   on('vreset', 'onclick', () => { for (const m of members(selVeh)) delete VE.flytt[m.id]; saveVehicles(); drawVehicles(); panel(); });
   on('vundo', 'onclick', () => { VE.bort = []; saveVehicles(); drawVehicles(); panel(); });
+  on('vresetall', 'onclick', () => {
+    if (!confirm('Flytta tillbaka alla maskiner dit de stod i sparfilen och ta bort egna kopplingar?')) return;
+    VE.flytt = {}; VE.lankar = []; VE.lossa = []; selVeh = null; saveVehicles(); drawVehicles(); panel();
+  });
   const bindVeh = () => side.querySelectorAll('[data-v]').forEach(el => el.onclick = () => {
     newVeh = D.vehicleCatalog[+el.dataset.v]; tool = 'nyfordon'; panel();
   });
