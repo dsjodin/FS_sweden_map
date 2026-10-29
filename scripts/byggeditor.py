@@ -140,12 +140,14 @@ def main():
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
 
     def generated_trees():
-        """Träden från senaste bygget (build_map.py), i meter från kartans mitt, för att visa i editorn."""
+        """Träden från senaste bygget (build_map.py), i meter från kartans mitt, med art och storlek
+        (t.ex. "spruce_var01_stage03"), för att visa i editorn."""
         path = project.build / "trad_placerade.json"
         if not path.exists():
             return []
         t = json.loads(path.read_text(encoding="utf-8"))
-        return [[round(e - world.e0, 1), round(n - world.n0, 1)] for e, n in t["skog"] + t["utanfor"]]
+        return [[round(t_[0] - world.e0, 1), round(t_[1] - world.n0, 1), t_[2] if len(t_) > 2 else ""]
+                for t_ in t["skog"] + t["utanfor"]]
     build = {"running": False, "log": ""}
 
     def run_build():

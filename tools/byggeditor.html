@@ -41,7 +41,7 @@
 let D, placed = [], drawings = [], mode = 'bygg';
 let selFoot = null, selPlace = null, query = '', hideSmall = true, onlyOpen = false, modFilter = '';
 let tool = null, current = null, selDraw = null;            // Måla mark: verktyg, pågående ritning, vald ritning
-let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null, showGen = false;
+let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null;
 let start = {gard: null, falt: []};   // Start-läget: gårdens mitt, bredd, längd, vridning, byggnader och en punkt per startfält
 let freeItem = null;
 let overviewLayer = null, groundLayer = null;   // spelets kartbild och marklagren, laddas om efter varje bygge                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
@@ -55,7 +55,7 @@ const AREA_HELP = {'gräs': 'gräs, inga fält eller träd', 'åker': 'nytt fäl
 const ROAD_TYPES = {'grusväg': '#e6d3a1', 'asfaltväg': '#30353a'};
 
 const map = L.map('map', {crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25});
-const genLayer = L.layerGroup(), footLayer = L.layerGroup().addTo(map), drawLayer = L.layerGroup().addTo(map);
+const genLayer = L.layerGroup().addTo(map), footLayer = L.layerGroup().addTo(map), drawLayer = L.layerGroup().addTo(map);
 const placeLayer = L.layerGroup().addTo(map), treeLayer = L.layerGroup().addTo(map), editLayer = L.layerGroup().addTo(map);
 const startLayer = L.layerGroup().addTo(map);
 const canvas = L.canvas({padding: 0.5});
@@ -130,7 +130,7 @@ function finishDrawing() {
 }
 function removeDraw() {
   if (!selDraw) return;
-  drawings = drawings.filter(d => d !== selDraw); selDraw = null; saveDrawings(); draw(); panel();
+  drawings = drawings.filter(d => d !== selDraw); selDraw = null; saveDrawings(); draw(); drawGenerated(); panel();
 }
 function dragHandle(latlng, onMove, onEnd) {   // flytta något med musen tills knappen släpps
   map.dragging.disable();
@@ -256,12 +256,23 @@ function draw() {
   }
   document.getElementById('map').classList.toggle('drawing', !!tool);
 }
-function drawGenerated() {
+const CONIFERS = /^(spruce|pinus|lodgepole)/;
+function genRadius(stage) { const m = /stage0*(\d+)/.exec(stage || ''); return 1.5 + (m ? +m[1] : 3) * 0.9; }   // meter
+function noTreeAreas() { return drawings.filter(d => d.kind === 'yta' && d.type === 'inga träd'); }
+function removeGenTree(x, y) {   // ett litet "inga träd"-område på 3 × 3 m tar bort trädet vid nästa bygge
+  const h = 1.5, d = {kind: 'yta', type: 'inga träd', points: [[x - h, y - h], [x + h, y - h], [x + h, y + h], [x - h, y + h]]};
+  drawings.push(d); saveDrawings(); drawGenerated(); draw();
+}
+function drawGenerated() {     // träden från senaste bygget: barrträd mörkgröna, lövträd ljusgröna, storlek efter ålder
   genLayer.clearLayers();
-  if (!showGen) { map.removeLayer(genLayer); return; }
-  for (const [x, y] of D.genTrees)
-    L.circleMarker(ll(x, y), {renderer: canvas, radius: 2, stroke: false, fillColor: '#ff2d95', fillOpacity: 0.8, interactive: false}).addTo(genLayer);
-  genLayer.addTo(map);
+  const gone = noTreeAreas();
+  for (const [x, y, stage] of D.genTrees) {
+    if (gone.some(a => inside([x, y], a.points))) continue;
+    const c = L.circle(ll(x, y), {renderer: canvas, radius: genRadius(stage), weight: 1, color: '#0d2a10',
+      fillColor: CONIFERS.test(stage || '') ? '#1f6b2c' : '#6cc04a', fillOpacity: 0.85, interactive: mode === 'trad'})
+      .bindTooltip(treeLabel(stage) || 'träd', {sticky: true}).addTo(genLayer);
+    c.on('click', e => { L.DomEvent.stop(e); if (tool === 'tabort') removeGenTree(x, y); });
+  }
 }
 function drawStats() {
   const el = document.getElementById('stats');
@@ -361,10 +372,13 @@ function panelTrad() {
   let h = `<h2>Sätt ut träd</h2><div class="row"><select id="tt">${treeOptions(treeType)}</select>
     <button id="tp" class="${tool === 'träd' ? 'on' : ''}">Sätt ut</button></div>
     <p class="muted">Klicka i kartan för att sätta ett träd. Dra ett träd för att flytta det. Högre storlek = större träd.
-    Gran och tall saknas tills vi vet vad de heter i spelet. Vill du ta bort automatiska träd: rita en yta
-    <b>inga träd</b> under Måla mark.</p>
-    <div class="row"><label><input type="checkbox" id="sg" ${showGen ? 'checked' : ''}> visa träd från senaste bygget
-    (${D.genTrees.length})</label></div>`;
+    Större områden utan träd ritar du som en yta <b>inga träd</b> under Måla mark.</p>
+    <h2>Träden från senaste bygget</h2>
+    <p class="muted">${D.genTrees.length} träd, mörkgröna barrträd och ljusgröna lövträd, större ju äldre. Tänd och släck
+    dem med lagret "Träd från senaste bygget".</p>
+    <div class="row"><button id="tr" class="${tool === 'tabort' ? 'on' : ''}">Ta bort träd …</button></div>
+    <p class="muted">${tool === 'tabort' ? 'Klicka på träden som ska bort. De försvinner vid nästa bygge.' :
+      'Tryck på knappen och klicka sedan på träden som ska bort.'}</p>`;
   if (selDraw && selDraw.kind === 'träd') {
     h += `<h2>Valt träd</h2><div class="row"><select id="tc">${treeOptions(selDraw.type)}</select>
       <button id="dt">Ta bort</button></div><p class="muted">Piltangenterna flyttar 0,5 m, <kbd>Delete</kbd> tar bort.</p>`;
@@ -417,7 +431,7 @@ function panel() {
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el[ev] = fn; };
   side.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
     mode = b.dataset.m; tool = null; current = null; selDraw = null; selFoot = null; selPlace = null;
-    map.doubleClickZoom.enable(); draw(); panel();
+    map.doubleClickZoom.enable(); draw(); drawGenerated(); panel();
   });
   // Byggnader
   side.querySelectorAll('[data-r]').forEach(b => b.onclick = () => rotate(+b.dataset.r));
@@ -448,7 +462,7 @@ function panel() {
   on('tp', 'onclick', () => startTool(tool === 'träd' ? null : 'träd'));
   on('tc', 'onchange', e => { selDraw.type = e.target.value; selDraw.art = D.treeTypes.find(t => t.stage === selDraw.type).art; saveDrawings(); draw(); });
   on('dt', 'onclick', removeDraw);
-  on('sg', 'onchange', e => { showGen = e.target.checked; drawGenerated(); });
+  on('tr', 'onclick', () => { startTool(tool === 'tabort' ? null : 'tabort'); drawGenerated(); });
   // Start
   on('pg', 'onclick', () => startTool(tool === 'gard' ? null : 'gard'));
   on('rg', 'onclick', () => { start.gard = null; saveStart(); draw(); panel(); });
@@ -595,10 +609,11 @@ fetch('api/data').then(r => r.json()).then(d => {
     ctl.addTo(map);
   }
   Object.assign(overlays, {'Verkliga byggnader': footLayer, 'Ritade ytor och vägar': drawLayer,
-    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer, 'Fält och startgård': startLayer});
+    'Placerade byggnader': placeLayer, 'Utsatta träd': treeLayer, 'Träd från senaste bygget': genLayer,
+    'Fält och startgård': startLayer});
   L.control.layers(bases, overlays, {collapsed: false}).addTo(map);
   L.rectangle([[-D.half, -D.half], [D.half, D.half]], {color: '#fff', weight: 1, dashArray: '6 4', fill: false, interactive: false}).addTo(map);
   map.fitBounds([[-D.half, -D.half], [D.half, D.half]]);
-  draw(); panel();
+  draw(); drawGenerated(); panel();
 });
 </script></body></html>

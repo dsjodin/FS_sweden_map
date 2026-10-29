@@ -457,8 +457,8 @@ def build(project, args):
     # Var träden hamnade, för kontrollkartan (kontrollkarta.py).
     project.build.mkdir(parents=True, exist_ok=True)
     (project.build / "trad_placerade.json").write_text(json.dumps({
-        "skog": [[round(e, 1), round(n, 1)] for e, n, *_ in trees[:len(trees) - len(loose)]],
-        "utanfor": [[round(e, 1), round(n, 1)] for e, n, *_ in loose]}), encoding="utf-8")
+        "skog": [[round(e, 1), round(n, 1), stage] for e, n, stage, _ in trees[:len(trees) - len(loose)]],
+        "utanfor": [[round(e, 1), round(n, 1), stage] for e, n, stage, _ in loose]}), encoding="utf-8")
 
     # i3d: fs25-empty-map:s scen, med våra marklager och fält.
     weight_files = {name: f"data/{name}_weight.png" for name, _ in GROUND}

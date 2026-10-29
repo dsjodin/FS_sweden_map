@@ -156,8 +156,8 @@ def main():
         "square": [latlon(ix0, iy0), latlon(ix1, iy1)],
         "ortho": ortho.exists(), "canopy": chm.exists(), "farmlands": farmlands.exists(),
         "forest": forest, "fields": fields,
-        "trees_forest": [latlon(e, n) for e, n in trees["skog"]],
-        "trees_loose": [latlon(e, n) for e, n in trees["utanfor"]],
+        "trees_forest": [latlon(e, n) for e, n, *_ in trees["skog"]],
+        "trees_loose": [latlon(e, n) for e, n, *_ in trees["utanfor"]],
     }
     # Spelets kartkoordinat: x österut, z söderut, 0 i kartans nordvästra hörn (som på kartan i spelet).
     # Omräkningen lat/lon -> SWEREF görs grovt linjärt över kartans lilla yta.
