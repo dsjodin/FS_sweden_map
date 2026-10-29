@@ -44,6 +44,7 @@ let tool = null, current = null, selDraw = null;            // Måla mark: verkt
 let areaType = 'gräs', roadType = 'grusväg', roadWidth = 4, treeType = null;
 let start = {gard: null, falt: []};   // Start-läget: gårdens mitt, bredd, längd, vridning, byggnader och en punkt per startfält
 let freeItem = null;
+let dragEnded = 0;                    // klicket som följer när man släpper efter en dragning ska inte avmarkera
 let overviewLayer = null, groundLayer = null;   // spelets kartbild och marklagren, laddas om efter varje bygge                  // Byggnader: modell som väntar på ett klick i kartan (fri placering)
 try { modFilter = localStorage.getItem('byggeditor.mod') || ''; } catch (e) {}
 const AREA_TYPES = {'gräs': '#7cc46a', 'åker': '#b98a4e', 'gårdsplan': '#cdbb8e', 'asfaltyta': '#4d5358',
@@ -135,7 +136,7 @@ function removeDraw() {
 function dragHandle(latlng, onMove, onEnd) {   // flytta något med musen tills knappen släpps
   map.dragging.disable();
   const move = ev => onMove(ev.latlng);
-  const up = () => { map.off('mousemove', move); map.off('mouseup', up); map.dragging.enable(); onEnd(); };
+  const up = () => { map.off('mousemove', move); map.off('mouseup', up); map.dragging.enable(); dragEnded = Date.now(); onEnd(); };
   map.on('mousemove', move); map.on('mouseup', up);
 }
 function treeRadius(d) { const m = /stage(\d+)/.exec(d.type); return 3 + (m ? +m[1] : 3); }
@@ -263,6 +264,13 @@ function removeGenTree(x, y) {   // ett litet "inga träd"-område på 3 × 3 m 
   const h = 1.5, d = {kind: 'yta', type: 'inga träd', points: [[x - h, y - h], [x + h, y - h], [x + h, y + h], [x - h, y + h]]};
   drawings.push(d); saveDrawings(); drawGenerated(); draw();
 }
+function adoptGenTree(x, y, stage) {   // ett träd från bygget blir ett utsatt träd som går att flytta och byta
+  const h = 1.5;
+  drawings.push({kind: 'yta', type: 'inga träd', points: [[x - h, y - h], [x + h, y - h], [x + h, y + h], [x - h, y + h]]});
+  const d = {kind: 'träd', type: stage, art: stage.split('_')[0], points: [[x, y]]};
+  drawings.push(d); selDraw = d; tool = null;
+  return d;
+}
 function drawGenerated() {     // träden från senaste bygget: barrträd mörkgröna, lövträd ljusgröna, storlek efter ålder
   genLayer.clearLayers();
   const gone = noTreeAreas();
@@ -271,7 +279,17 @@ function drawGenerated() {     // träden från senaste bygget: barrträd mörkg
     const c = L.circle(ll(x, y), {renderer: canvas, radius: genRadius(stage), weight: 1, color: '#0d2a10',
       fillColor: CONIFERS.test(stage || '') ? '#1f6b2c' : '#6cc04a', fillOpacity: 0.85, interactive: mode === 'trad'})
       .bindTooltip(treeLabel(stage) || 'träd', {sticky: true}).addTo(genLayer);
-    c.on('click', e => { L.DomEvent.stop(e); if (tool === 'tabort') removeGenTree(x, y); });
+    c.on('click', L.DomEvent.stop);
+    c.on('mousedown', e => {
+      L.DomEvent.stop(e);
+      if (tool === 'tabort') { removeGenTree(x, y); return; }
+      if (tool || !stage) return;
+      const d = adoptGenTree(x, y, stage);                // dra direkt, eller klicka för att byta art
+      const m = L.circleMarker(ll(x, y), {radius: treeRadius(d), color: '#1d6fd6', weight: 3, fillColor: '#3cb043',
+        fillOpacity: 0.85, interactive: false}).addTo(editLayer);
+      drawGenerated();
+      dragHandle(e.latlng, ln => { d.points[0] = xy(ln); m.setLatLng(ln); }, () => { saveDrawings(); draw(); panel(); });
+    });
   }
 }
 function drawStats() {
@@ -378,7 +396,7 @@ function panelTrad() {
     dem med lagret "Träd från senaste bygget".</p>
     <div class="row"><button id="tr" class="${tool === 'tabort' ? 'on' : ''}">Ta bort träd …</button></div>
     <p class="muted">${tool === 'tabort' ? 'Klicka på träden som ska bort. De försvinner vid nästa bygge.' :
-      'Tryck på knappen och klicka sedan på träden som ska bort.'}</p>`;
+      'Dra ett träd för att flytta det, eller klicka på det för att byta art och storlek. Det blir då ett utsatt träd.'}</p>`;
   if (selDraw && selDraw.kind === 'träd') {
     h += `<h2>Valt träd</h2><div class="row"><select id="tc">${treeOptions(selDraw.type)}</select>
       <button id="dt">Ta bort</button></div><p class="muted">Piltangenterna flyttar 0,5 m, <kbd>Delete</kbd> tar bort.</p>`;
@@ -518,6 +536,7 @@ async function startBuild() {
 
 // --- Mus och tangentbord ------------------------------------------------------------------------
 map.on('click', e => {
+  if (Date.now() - dragEnded < 400) return;
   if (mode === 'bygg' && tool === 'fri' && freeItem) {     // fri placering, vriden som gårdsplanen
     const [x, y] = xy(e.latlng), c = freeItem;
     placeOn({id: 'fri-' + Date.now(), cx: x, cy: y, angle: start.gard ? (start.vridning + 180) % 180 : 0,
