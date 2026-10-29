@@ -141,7 +141,8 @@ def main():
         cat = json.loads((vehicle_catalog / "katalog.json").read_text(encoding="utf-8")) \
             if (vehicle_catalog / "katalog.json").exists() else []
         edits = json.loads(vehicle_edits.read_text(encoding="utf-8")) if vehicle_edits.exists() else {}
-        return {"vehicles": fordon.read(project.dir / "fordon.xml"), "vehicleEdits": edits, "vehicleCatalog": cat}
+        vs = fordon.read(project.dir / "fordon.xml")
+        return {"vehicles": vs, "vehicleEdits": fordon.normalize(edits, vs), "vehicleCatalog": cat}
     import fs25_objects as obj
 
     def build_fields():
